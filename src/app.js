@@ -3,7 +3,7 @@
   var FEE = 5, CAP = 11, TEAM = { a: 'Blancos', b: 'Negros', s: 'Suplentes' };
   var app = document.getElementById('app');
   var B = window.createBackend();
-  var S = { me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
+  var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
   var ui = { tab: 'partido', sort: 'g', onboarding: false, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
@@ -60,6 +60,8 @@
   }
   function dues(m) {
     var payers = side(m, 'a').concat(side(m, 'b')).filter(function (x) { return !x.e.gk; }).map(function (x) { return x.pid; });
+    if (m.settled) return { payers: payers, unpaid: [] };
+    if (!S.entries[m.id]) return { payers: payers, unpaid: [], unknown: true };
     var es = ents(m.id);
     return { payers: payers, unpaid: payers.filter(function (pid) { return pid !== m.cob && !(es[pid] && es[pid].paid); }) };
   }
@@ -164,7 +166,7 @@
     var ms = closed().reverse().filter(function (m) { return !!m.cob; });
     return ms.map(function (m, i) {
       var d = dues(m);
-      if (!d.unpaid.length && i > 0) return '';
+      if (d.unknown || (!d.unpaid.length && i > 0)) return '';
       var meOwes = d.unpaid.indexOf(S.me.pid) >= 0;
       return '<section class="cobro" aria-label="Pagos"><p class="t">Cobra ' + esc(nameOf(m.cob)) + '</p>' +
         '<p>' + FEE + ' € por Bizum del partido del ' + esc(largo(m.date).toLowerCase()) + '. ' +
@@ -331,7 +333,7 @@
       return '<article class="partido"><p class="nota">' + esc(largo(m.date)) + '</p>' +
         '<p class="res"><small>Blancos</small>' + (m.sa || 0) + '<i>–</i>' + (m.sb || 0) + '<small>Negros</small></p>' +
         '<div class="dos">' + alineacion(m, 'a') + alineacion(m, 'b') + '</div>' +
-        (m.cob ? '<p class="nota">Cobró ' + esc(nameOf(m.cob)) + '. Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '.</p>' : '') +
+        (m.cob ? '<p class="nota">Cobró ' + esc(nameOf(m.cob)) + '.' + (d.unknown ? '' : d.unpaid.length ? ' Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '.' : ' Pagaron todos.') + '</p>' : '') +
         (S.me.isAdmin ? '<div class="fila-btn"><button class="btn min" data-act="status" data-mid="' + m.id + '" data-v="review" data-fk="re-' + m.id + '">Reabrir para corregir</button>' +
           (ui.confirm === 'del-' + m.id
             ? '<button class="btn min peligro" data-act="del-match" data-mid="' + m.id + '" data-fk="dy-' + m.id + '">Sí, borrar</button><button class="btn min" data-act="confirm" data-v="" data-fk="dn-' + m.id + '">Cancelar</button>'
@@ -354,6 +356,10 @@
         (ui.confirm === 'release'
           ? '<div class="tarjeta"><p class="aviso">Este móvil dejará de ser ' + esc(nameOf(S.me.pid)) + ' y el nombre quedará libre para que lo elija otro.</p><div class="fila-btn"><button class="btn peligro" data-act="release-me" data-fk="relyes">Sí, cambiar</button><button class="btn" data-act="confirm" data-v="" data-fk="relno">Cancelar</button></div></div>'
           : '<button class="enlace" data-act="confirm" data-v="release" data-fk="rel" style="align-self:flex-start">No soy ' + esc(nameOf(S.me.pid)) + '</button>');
+    }
+    if (S.me.canBootstrap && S.me.pid) {
+      html += '<div class="tarjeta"><h3>Esta app todavía no tiene administrador</h3><p class="nota">El administrador abre las convocatorias, pone el marcador y cierra los partidos. Solo el primero puede nombrarse así; después, los administradores nombran a los demás.</p>' +
+        '<button class="btn pri" data-act="bootstrap" data-fk="boot">Hacerme administrador</button></div>';
     }
     if (S.me.isAdmin) {
       html += '<div class="tarjeta"><h3>Jugadores</h3><p class="nota">Toca un jugador para renombrarlo, liberar su móvil o hacerlo administrador.</p><div>' +
@@ -438,6 +444,11 @@
     var ae = document.activeElement, keep = ae && app.contains(ae) ? { fk: ae.dataset ? ae.dataset.fk : null, id: ae.id, s: ae.selectionStart, e: ae.selectionEnd } : null;
     idx = {};
     S.players.forEach(function (p) { idx[p.id] = p; });
+    if (S.loading || S.error) {
+      app.innerHTML = header() + '<section class="vista"><div class="bloque"><h1 class="cuando">' + (S.error ? 'No se puede abrir la app' : 'Conectando') + '</h1>' +
+        '<p class="donde">' + esc(S.error || 'Un momento, se están cargando los partidos.') + '</p></div></section>';
+      return;
+    }
     var body = ui.onboarding ? viewOnboarding() : ui.tab === 'tabla' ? viewTabla() : ui.tab === 'partidos' ? viewPartidos() : ui.tab === 'yo' ? viewYo() : viewPartido();
     app.innerHTML = protoBar() + header() + body + tabbar() + sheet();
     if (keep) {
@@ -511,7 +522,7 @@
     },
     status: function (b) {
       ui.confirm = null;
-      run(B.updateMatch(b.dataset.mid, { status: b.dataset.v }), b.dataset.v === 'review' ? 'Listo. Ya se pueden apuntar goles y pagos.' : 'Convocatoria abierta otra vez.').then(function () {
+      run(B.updateMatch(b.dataset.mid, { status: b.dataset.v, settled: false }), b.dataset.v === 'review' ? 'Listo. Ya se pueden apuntar goles y pagos.' : 'Convocatoria abierta otra vez.').then(function () {
         if (b.dataset.v === 'review') { ui.tab = 'partido'; render(); }
       });
     },
@@ -542,6 +553,7 @@
       ui.confirm = null;
       run(B.updateMatch(m.id, { status: 'closed', final: final }), 'Partido cerrado. Ya cuenta en la tabla.').then(function () { ui.tab = 'tabla'; render(); });
     },
+    bootstrap: function () { run(B.bootstrapAdmin(), 'Hecho. Ya eres administrador.'); },
     'release-me': function () { ui.confirm = null; run(B.releasePlayer(S.me.pid)).then(function () { ui.onboarding = true; render(); }); },
     release: function (b) { ui.sheet = null; run(B.releasePlayer(b.dataset.pid), 'Móvil liberado. El nombre vuelve a estar libre.'); },
     admin: function (b) { ui.sheet = null; run(B.setAdmin(b.dataset.pid, b.dataset.v === '1'), b.dataset.v === '1' ? nameOf(b.dataset.pid) + ' ya es administrador.' : 'Hecho.'); },
@@ -605,5 +617,16 @@
   app.addEventListener('change', onInput);
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ui.sheet) { ui.sheet = null; render(); } });
 
-  B.watch(function (s) { S = s; render(); });
+  var settling = {};
+  function settle() {
+    if (!S.me.isAdmin) return;
+    closed().forEach(function (m) {
+      if (!m.cob || m.settled || settling[m.id]) return;
+      var d = dues(m);
+      if (d.unknown || d.unpaid.length) return;
+      settling[m.id] = true;
+      B.updateMatch(m.id, { settled: true }).then(null, function () { delete settling[m.id]; });
+    });
+  }
+  B.watch(function (s) { S = s; render(); if (!S.loading && !S.error) settle(); });
 })();

@@ -1,0 +1,100 @@
+rules_version = '2';
+// Reglas de acceso de TalentoSEK. Se pegan en Firebase: Firestore Database → Reglas → Publicar.
+//
+// Resumen: cualquiera que abra la app puede leer. Cada móvil se asocia a un jugador y solo puede
+// apuntarse, borrarse, declarar sus goles y marcar su pago (y los de sus invitados). Abrir y cerrar
+// partidos, el marcador, quién cobra y la gestión de jugadores son cosa de los administradores.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function hasPlayer() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function myPid() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.pid; }
+    function owns(pid) {
+      return hasPlayer() && (myPid() == pid || get(/databases/$(database)/documents/players/$(pid)).data.guestOf == myPid());
+    }
+    function changedOnly(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function validName(n) { return n is string && n.size() > 0 && n.size() <= 30; }
+
+    // Marca de que la app ya tiene su primer administrador.
+    match /meta/claimed {
+      allow read: if signedIn();
+      allow create: if signedIn() && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      allow read: if signedIn();
+      // Un administrador nombra a otro; o, una sola vez, el primero que configura la app se nombra a sí mismo.
+      allow create: if isAdmin()
+        || (signedIn() && uid == request.auth.uid
+            && !exists(/databases/$(database)/documents/meta/claimed)
+            && existsAfter(/databases/$(database)/documents/meta/claimed));
+      allow delete: if isAdmin() && uid != request.auth.uid;
+    }
+
+    // Qué jugador es cada móvil. Solo se crea a la vez que se coge o se crea ese jugador.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['pid'])
+        && getAfter(/databases/$(database)/documents/players/$(request.resource.data.pid)).data.uid == request.auth.uid;
+      allow delete: if signedIn() && (uid == request.auth.uid || isAdmin());
+    }
+
+    match /players/{pid} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        || (signedIn() && validName(request.resource.data.name)
+            && request.resource.data.keys().hasOnly(['name', 'aka', 'uid', 'guestOf'])
+            && (
+              // darse de alta uno mismo
+              (request.resource.data.uid == request.auth.uid && request.resource.data.guestOf == null && !hasPlayer()
+                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.pid == pid)
+              // traer a un invitado
+              || (request.resource.data.uid == null && hasPlayer() && request.resource.data.guestOf == myPid())
+            ));
+      allow update: if isAdmin()
+        // coger un nombre libre
+        || (signedIn() && resource.data.uid == null && request.resource.data.uid == request.auth.uid
+            && !hasPlayer() && changedOnly(['uid'])
+            && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.pid == pid)
+        // soltar el propio
+        || (signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == null && changedOnly(['uid']));
+      // un invitado que aún no ha entrado lo puede borrar quien lo trajo
+      allow delete: if isAdmin() || (hasPlayer() && resource.data.guestOf == myPid() && resource.data.uid == null);
+    }
+
+    match /matches/{mid} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+
+      function status() { return get(/databases/$(database)/documents/matches/$(mid)).data.status; }
+
+      match /entries/{pid} {
+        allow read: if signedIn();
+        allow create: if isAdmin()
+          || (owns(pid) && status() == 'open'
+              && request.resource.data.keys().hasOnly(['t', 'gk', 'at', 'g', 'a', 'og', 'paid'])
+              && request.resource.data.t in ['a', 'b', 's'] && request.resource.data.gk is bool
+              && request.resource.data.g == 0 && request.resource.data.a == 0 && request.resource.data.og == 0
+              && request.resource.data.paid == false);
+        allow update: if isAdmin()
+          || (owns(pid) && (
+            // convocatoria abierta: cambiar de equipo o de portero
+            (status() == 'open' && changedOnly(['t', 'gk'])
+              && request.resource.data.t in ['a', 'b', 's'] && request.resource.data.gk is bool)
+            // partido jugado: declarar sus números y su pago
+            || (status() == 'review' && changedOnly(['g', 'a', 'og', 'paid'])
+              && request.resource.data.g is int && request.resource.data.g >= 0 && request.resource.data.g <= 30
+              && request.resource.data.a is int && request.resource.data.a >= 0 && request.resource.data.a <= 30
+              && request.resource.data.og is int && request.resource.data.og >= 0 && request.resource.data.og <= 9
+              && request.resource.data.paid is bool)
+            // partido cerrado: solo su pago
+            || (status() == 'closed' && changedOnly(['paid']) && request.resource.data.paid is bool)
+          ));
+        allow delete: if isAdmin() || (owns(pid) && status() == 'open');
+      }
+    }
+  }
+}
