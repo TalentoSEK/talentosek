@@ -190,8 +190,7 @@ window.TS_SEED = {
     { uid: 'u-jugador', label: 'Nico, jugador' },
     { uid: 'u-nuevo', label: 'Un móvil que entra por primera vez' }
   ],
-  players: [['Leo', [], 'u-admin'], ['Nico', [], 'u-jugador'], ['Bruno'], ['Dario'], ['Edu'], ['Fer'], ['Guille'], ['Hugo'], ['Iker'], ['Joel'], ['Kike'], ['Manu'],
-    ['Omar'], ['Pol'], ['Quique'], ['Raúl'], ['Samu'], ['Toni'], ['Unai'], ['Víctor'], ['Willy'], ['Xavi'], ['Yago'], ['Zeus']],
+  players: [['Leo', [], 'u-admin', 'med'], ['Nico', [], 'u-jugador', 'def'], ['Bruno', [], null, 'por'], ['Dario', [], null, 'med'], ['Edu', [], null, 'med'], ['Fer', [], null, 'ext'], ['Guille', [], null, 'del'], ['Hugo', [], null, 'def'], ['Iker', [], null, 'med'], ['Joel', [], null, 'ext'], ['Kike', [], null, 'por'], ['Manu', [], null, 'del'], ['Omar', [], null, 'por'], ['Pol', [], null, 'def'], ['Quique', [], null, 'def'], ['Raúl', [], null, 'med'], ['Samu', [], null, 'med'], ['Toni', [], null, 'ext'], ['Unai', [], null, 'del'], ['Víctor', [], null, 'def'], ['Willy', [], null, 'med'], ['Xavi', [], null, 'ext'], ['Yago', [], null, 'por']],
   matches: [
     { date: '2026-10-05', status: 'closed', sa: 3, sb: 4, cob: 'Willy',
       a: [['Bruno', 1], ['Leo', 0, 1, 1, 1], ['Nico', 0, 1, 0, 1], ['Dario', 0, 1, 0, 1], ['Edu', 0, 0, 1, 1], ['Fer', 0, 0, 1, 1], ['Guille', 0], ['Hugo', 0, 0, 0, 1], ['Iker', 0, 0, 0, 1], ['Joel', 0], ['Willy', 0]],
@@ -210,16 +209,16 @@ window.createBackend = function () {
   var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {} };
   var seq = 0, t0 = Date.now() - 3 * 86400000;
   function id(p) { seq++; return p + seq.toString(36) + Math.random().toString(36).slice(2, 6); }
-  function add(name, aka, uid) {
+  function add(name, aka, uid, pos) {
     var pid = id('p');
-    db.players[pid] = { id: pid, name: name, aka: aka || [], uid: uid || null, guestOf: null };
+    db.players[pid] = { id: pid, name: name, aka: aka || [], uid: uid || null, guestOf: null, pos: pos || null };
     if (uid) db.users[uid] = pid;
     return pid;
   }
   // Los datos de prueba llegan aparte (window.TS_SEED) para que el código no lleve nombres dentro.
   var seed = window.TS_SEED || { players: [], admin: null, matches: [], personas: [] };
   var N = {};
-  seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2]); });
+  seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2], r[3]); });
   if (seed.admin) db.admins[seed.admin] = true;
   function entry(t, gk, i, g, a, og, paid) { return { t: t, gk: !!gk, at: t0 + i * 60000, g: g || 0, a: a || 0, og: og || 0, paid: !!paid }; }
   // cada jugador de un partido: [nombre, portero, goles, asistencias, pagado]
@@ -279,7 +278,7 @@ window.createBackend = function () {
       return op(function () {
         var name = String(data.name || '').trim().slice(0, 30);
         if (!name) deny('Escribe un nombre.');
-        var pid = id('p'), p = { id: pid, name: name, aka: [], uid: null, guestOf: null };
+        var pid = id('p'), p = { id: pid, name: name, aka: [], uid: null, guestOf: null, pos: null };
         if (data.guestOf) {
           if (data.guestOf !== mine() && !admin()) deny();
           p.guestOf = data.guestOf;
@@ -307,6 +306,14 @@ window.createBackend = function () {
         if (!p) deny('Ese jugador ya no existe.');
         if (patch.name !== undefined) p.name = String(patch.name).trim().slice(0, 30) || p.name;
         if (patch.aka) p.aka = patch.aka;
+      });
+    },
+    setPosition: function (pid, pos) {
+      return op(function () {
+        var p = db.players[pid];
+        if (!p) deny('Ese jugador ya no existe.');
+        if (!admin() && pid !== mine()) deny();
+        p.pos = pos || null;
       });
     },
     deletePlayer: function (pid) {
@@ -390,11 +397,12 @@ window.createBackend = function () {
 (function () {
   'use strict';
   var FEE = 5, CAP = 11, TEAM = { a: 'Blancos', b: 'Negros', s: 'Suplentes' };
+  var POS = { por: 'Portero', def: 'Defensa', med: 'Mediocampista', ext: 'Extremo', del: 'Delantero' };
   var app = document.getElementById('app');
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -520,7 +528,8 @@ window.createBackend = function () {
 
   /* ---------- la pizarra ---------- */
   function extra(m, x) {
-    if (m.status === 'open') return x.e.gk ? 'portero' : (idx[x.pid] && idx[x.pid].guestOf ? 'invitado' : '');
+    var p = idx[x.pid] || {};
+    if (m.status === 'open') return x.e.gk ? 'portero' : p.guestOf ? 'inv.' : (p.pos && POS[p.pos] ? p.pos + '.' : '');   // abreviado para no comerse el nombre
     var bits = [];
     if (x.e.g) bits.push(x.e.g + 'g');
     if (x.e.a) bits.push(x.e.a + 'a');
@@ -572,10 +581,11 @@ window.createBackend = function () {
   }
   function miEstado(m) {
     if (!S.me.pid) return '<div class="estado"><p>Elige quién eres para apuntarte.</p><button class="btn pri" data-act="identify" data-fk="ident2">Elegir quién soy</button></div>';
-    var e = ents(m.id)[S.me.pid];
-    if (!e) return '<div class="estado"><p>No estás apuntado. Toca un hueco libre de la pizarra.</p></div>';
+    var e = ents(m.id)[S.me.pid], ask = idx[S.me.pid] && !idx[S.me.pid].pos
+      ? '<div class="estado"><p>Todavía no has dicho de qué juegas.</p><button class="btn min" data-act="ask-pos" data-fk="askpos">Elegir posición</button></div>' : '';
+    if (!e) return ask + '<div class="estado"><p>No estás apuntado. Toca un hueco libre de la pizarra.</p></div>';
     var txt = e.t === 's' ? 'Estás de suplente.' : e.gk ? 'Eres el portero de ' + TEAM[e.t] + '.' : 'Juegas con ' + TEAM[e.t] + '.';
-    return '<div class="estado"><p>' + txt + '</p><button class="btn min" data-act="leave" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-fk="salir">Borrarme</button></div>';
+    return ask + '<div class="estado"><p>' + txt + '</p><button class="btn min" data-act="leave" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-fk="salir">Borrarme</button></div>';
   }
   function suplentes(m) {
     var s = side(m, 's'), meIn = !!ents(m.id)[S.me.pid];
@@ -742,6 +752,7 @@ window.createBackend = function () {
       html += '<div class="bloque"><h1 class="cuando">' + esc(nameOf(S.me.pid)) + '</h1><p class="donde">' +
         (r && r.pj ? 'Llevas ' + r.pj + (r.pj === 1 ? ' partido' : ' partidos') + ', ' + r.g + (r.g === 1 ? ' gol' : ' goles') + ' y ' + r.a + (r.a === 1 ? ' asistencia' : ' asistencias') + '.' : 'Todavía no tienes partidos cerrados.') +
         (S.me.isAdmin ? ' Eres administrador.' : '') + '</p></div>' +
+        '<div class="campo" style="max-width:280px"><label for="mi-pos">Tu posición</label>' + posSelect('mi-pos', 'mypos', S.me.pid) + '</div>' +
         (ui.confirm === 'release'
           ? '<div class="tarjeta"><p class="aviso">Este móvil dejará de ser ' + esc(nameOf(S.me.pid)) + ' y el nombre quedará libre para que lo elija otro.</p><div class="fila-btn"><button class="btn peligro" data-act="release-me" data-fk="relyes">Sí, cambiar</button><button class="btn" data-act="confirm" data-v="" data-fk="relno">Cancelar</button></div></div>'
           : '<button class="enlace" data-act="confirm" data-v="release" data-fk="rel" style="align-self:flex-start">No soy ' + esc(nameOf(S.me.pid)) + '</button>');
@@ -754,6 +765,7 @@ window.createBackend = function () {
       html += '<div class="tarjeta"><h3>Jugadores</h3><p class="nota">Toca un jugador para renombrarlo, liberar su móvil o hacerlo administrador.</p><div>' +
         S.players.slice().sort(byName).map(function (p) {
           var bits = [];
+          if (p.pos && POS[p.pos]) bits.push(POS[p.pos].toLowerCase());
           if (p.uid) bits.push('móvil asociado');
           if (p.uid && S.admins[p.uid]) bits.push('administrador');
           if (p.guestOf) bits.push('invitado de ' + nameOf(p.guestOf));
@@ -765,7 +777,23 @@ window.createBackend = function () {
   }
 
   /* ---------- quién eres ---------- */
+  function posSelect(id, key, pid) {
+    var cur = idx[pid] ? idx[pid].pos : null;
+    return '<select id="' + id + '" data-in="' + key + '" data-pid="' + pid + '"><option value="">Sin elegir</option>' + Object.keys(POS).map(function (k) {
+      return '<option value="' + k + '"' + (cur === k ? ' selected' : '') + '>' + POS[k] + '</option>';
+    }).join('') + '</select>';
+  }
+  function viewPosition() {
+    var who = ui.pending.pid ? nameOf(ui.pending.pid) : ui.pending.name;
+    return '<section class="vista"><div class="bloque"><h1 class="cuando">¿De qué juegas, ' + esc(who) + '?</h1>' +
+      '<p class="donde">Elige tu posición habitual. Saldrá junto a tu nombre en la pizarra y podrás cambiarla cuando quieras en la pestaña Yo.</p></div>' +
+      '<div class="lista-nombres">' + Object.keys(POS).map(function (k) {
+        return '<button data-act="pick-pos" data-v="' + k + '" data-fk="pos-' + k + '">' + POS[k] + '</button>';
+      }).join('') + '</div>' +
+      '<button class="enlace" data-act="pos-back" data-fk="posback" style="align-self:flex-start">' + (ui.pending.mine ? 'Ahora no' : 'Volver a la lista de nombres') + '</button></section>';
+  }
   function viewOnboarding() {
+    if (ui.pending) return viewPosition();
     var free = S.players.filter(function (p) { return !p.uid; }).sort(byName), taken = S.players.filter(function (p) { return !!p.uid; }).sort(byName);
     return '<section class="vista"><div class="bloque"><h1 class="cuando">¿Quién eres?</h1>' +
       '<p class="donde">Elige tu nombre. Este móvil quedará asociado a él y solo tú podrás apuntarte o borrarte.</p></div>' +
@@ -818,6 +846,7 @@ window.createBackend = function () {
       var isAdm = !!(p.uid && S.admins[p.uid]);
       body = '<h2>' + esc(p.name) + '</h2><form data-form="rename" class="bloque"><div class="campo"><label for="ren">Nombre</label>' +
         '<input type="text" id="ren" data-in="rename" maxlength="30" autocomplete="off" value="' + esc(ui.rename) + '"></div><button class="btn" type="submit">Guardar nombre</button></form>' +
+        '<div class="campo"><label for="p-pos">Posición</label>' + posSelect('p-pos', 'ppos', p.id) + '</div>' +
         '<div class="fila-btn">' +
         (p.uid ? '<button class="btn" data-act="release" data-pid="' + p.id + '" data-fk="lib">Liberar su móvil</button>' : '') +
         (p.uid && p.uid !== S.me.uid ? '<button class="btn" data-act="admin" data-pid="' + p.id + '" data-v="' + (isAdm ? 0 : 1) + '" data-fk="adm">' + (isAdm ? 'Quitar de administrador' : 'Hacer administrador') + '</button>' : '') +
@@ -865,9 +894,9 @@ window.createBackend = function () {
     return out.join('\n');
   }
   var act = {
-    tab: function (b) { ui.tab = b.dataset.t; ui.onboarding = false; ui.confirm = null; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
+    tab: function (b) { ui.tab = b.dataset.t; ui.onboarding = false; ui.pending = null; ui.confirm = null; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
     sort: function (b) { ui.sort = b.dataset.k; render(); },
-    identify: function () { ui.onboarding = true; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
+    identify: function () { ui.onboarding = true; ui.pending = null; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
     browse: function () { ui.onboarding = false; render(); },
     confirm: function (b) { ui.confirm = b.dataset.v || null; render(); },
     'close-sheet': function () { ui.sheet = null; render(); },
@@ -878,8 +907,29 @@ window.createBackend = function () {
       render();
     },
     'sheet-entry': function (b) { ui.sheet = { k: 'entry', mid: b.dataset.mid, pid: b.dataset.pid }; render(); },
-    claim: function (b) {
-      run(B.claimPlayer(b.dataset.pid)).then(function () { if (S.me.pid) { ui.onboarding = false; ui.tab = 'partido'; toast('Hecho. Este móvil es ' + nameOf(S.me.pid) + '.'); render(); } });
+    claim: function (b) { ui.pending = { pid: b.dataset.pid }; render(); try { window.scrollTo(0, 0); } catch (e) {} },
+    'ask-pos': function () { ui.pending = { pid: S.me.pid, mine: true }; ui.onboarding = true; render(); try { window.scrollTo(0, 0); } catch (e) {} },
+    'pos-back': function () { if (ui.pending && ui.pending.mine) ui.onboarding = false; ui.pending = null; render(); },
+    'pick-pos': function (b) {
+      var pend = ui.pending, pos = b.dataset.v;
+      if (!pend || !POS[pos]) return;
+      // Primero el nombre y después la posición: si la posición no se puede guardar, la entrada sigue valiendo.
+      var who = pend.mine ? Promise.resolve(pend.pid)
+        : pend.pid ? B.claimPlayer(pend.pid).then(function () { return pend.pid; })
+        : B.createPlayer({ name: pend.name, self: true });
+      who.then(function (pid) {
+        return B.setPosition(pid, pos).then(function () { return [pid, true]; }, function () { return [pid, false]; });
+      }).then(function (r) {
+        ui.pending = null; ui.onboarding = false; ui.newName = '';
+        if (!pend.mine) ui.tab = 'partido';
+        toast(!r[1] ? 'Has entrado como ' + nameOf(r[0]) + ', pero la posición no se ha guardado. Elígela más tarde en la pestaña Yo.'
+          : pend.mine ? 'Posición guardada: ' + POS[pos].toLowerCase() + '.' : 'Hecho. Este móvil es ' + nameOf(r[0]) + ', ' + POS[pos].toLowerCase() + '.');
+        render();
+      }, function (e) {
+        ui.pending = null;
+        toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.');
+        render();
+      });
     },
     join: function (b) {
       var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1', pid = S.me.pid;
@@ -953,7 +1003,7 @@ window.createBackend = function () {
       var name = ui.newName.trim().replace(/\s+/g, ' ');
       if (!name) { toast('Escribe tu nombre.'); return; }
       if (S.players.some(function (p) { return norm(p.name) === norm(name); })) { toast('Ya hay un ' + name + ' en la lista. Elígelo arriba o añade un apellido.'); return; }
-      run(B.createPlayer({ name: name, self: true })).then(function (pid) { if (pid) { ui.newName = ''; ui.onboarding = false; ui.tab = 'partido'; toast('Bienvenido, ' + name + '.'); render(); } });
+      ui.pending = { name: name }; render(); try { window.scrollTo(0, 0); } catch (e) {}
     },
     guest: function () {
       var name = ui.guestName.trim().replace(/\s+/g, ' '), sh = ui.sheet, m = sh && match(sh.mid), t = ui.guestTeam;
@@ -995,7 +1045,9 @@ window.createBackend = function () {
       var q = norm(el.value), items = document.querySelectorAll('#nombres li');
       for (var i = 0; i < items.length; i++) items[i].hidden = !!q && items[i].dataset.n.indexOf(q) < 0;
     } else if (k === 'persona') {
-      if (ev.type === 'change') { ui.onboarding = false; ui.sheet = null; ui.confirm = null; B.switchUser(el.value); }
+      if (ev.type === 'change') { ui.onboarding = false; ui.pending = null; ui.sheet = null; ui.confirm = null; B.switchUser(el.value); }
+    } else if (k === 'mypos' || k === 'ppos') {
+      if (ev.type === 'change' && (!el.value || POS[el.value])) run(B.setPosition(el.dataset.pid, el.value || null), 'Posición guardada.');
     } else if (k === 'cob') {
       if (ev.type === 'change') run(B.updateMatch(el.dataset.mid, { cob: el.value || null }));
     } else if (k in ui) {

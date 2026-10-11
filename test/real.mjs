@@ -11,7 +11,7 @@ await p.goto('https://app.test/',{waitUntil:'domcontentloaded'});
 const txt=async sel=>(await p.innerText(sel)).replace(/\s+/g,' ');
 console.log('primer pintado:', await txt('.cuando')); await p.waitForTimeout(200);
 console.log('vacía:', await txt('.vista'));
-await p.click('[data-act=identify]'); await p.fill('#nuevo','Leo'); await p.click('[data-form=new-player] button'); await p.waitForTimeout(150);
+await p.click('[data-act=identify]'); await p.fill('#nuevo','Leo'); await p.click('[data-form=new-player] button'); console.log('paso posición:', await p.textContent('.cuando')); await p.click('[data-fk="pos-med"]'); await p.waitForTimeout(200);
 console.log('quien:', await p.textContent('.quien'));
 await p.click('[data-fk="tab-yo"]'); console.log('yo:', (await txt('.vista')).slice(0,160));
 await p.click('[data-act=bootstrap]'); await p.waitForTimeout(150); console.log('admin:', /Eres administrador/.test(await txt('.vista')), '| puede repetir:', !!(await p.$('[data-act=bootstrap]')));
@@ -19,7 +19,7 @@ await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-12')
 console.log('convocatoria:', await txt('.cuando'), '|', await txt('.estado'));
 await p.click('.libre[data-t=b][data-gk="0"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));
 await p.click('[data-act=sheet][data-k=guest]'); await p.fill('#inv-n','Willy'); await p.selectOption('#inv-t','a'); await p.click('[data-form=guest] button[type=submit]'); await p.waitForTimeout(250);
-console.log('blancos:', await txt('.lado.a'));
+console.log('blancos:', await txt('.lado.a')); console.log('negros fila yo:', await txt('.fila.yo'));
 await p.click('[data-fk=jugado]'); await p.waitForTimeout(200); await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="yo-g-p"]'); await p.waitForTimeout(150);
 console.log('resultado:', await txt('.marcador'), '|', await p.evaluate(()=>[...document.querySelectorAll('.aviso')].map(a=>a.textContent).join(' / ')));
 await p.selectOption('select[data-in=cob]',{label:'Leo'}); await p.waitForTimeout(150);

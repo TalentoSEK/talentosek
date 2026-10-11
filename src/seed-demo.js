@@ -7,8 +7,7 @@ window.TS_SEED = {
     { uid: 'u-jugador', label: 'Nico, jugador' },
     { uid: 'u-nuevo', label: 'Un móvil que entra por primera vez' }
   ],
-  players: [['Leo', [], 'u-admin'], ['Nico', [], 'u-jugador'], ['Bruno'], ['Dario'], ['Edu'], ['Fer'], ['Guille'], ['Hugo'], ['Iker'], ['Joel'], ['Kike'], ['Manu'],
-    ['Omar'], ['Pol'], ['Quique'], ['Raúl'], ['Samu'], ['Toni'], ['Unai'], ['Víctor'], ['Willy'], ['Xavi'], ['Yago'], ['Zeus']],
+  players: [['Leo', [], 'u-admin', 'med'], ['Nico', [], 'u-jugador', 'def'], ['Bruno', [], null, 'por'], ['Dario', [], null, 'med'], ['Edu', [], null, 'med'], ['Fer', [], null, 'ext'], ['Guille', [], null, 'del'], ['Hugo', [], null, 'def'], ['Iker', [], null, 'med'], ['Joel', [], null, 'ext'], ['Kike', [], null, 'por'], ['Manu', [], null, 'del'], ['Omar', [], null, 'por'], ['Pol', [], null, 'def'], ['Quique', [], null, 'def'], ['Raúl', [], null, 'med'], ['Samu', [], null, 'med'], ['Toni', [], null, 'ext'], ['Unai', [], null, 'del'], ['Víctor', [], null, 'def'], ['Willy', [], null, 'med'], ['Xavi', [], null, 'ext'], ['Yago', [], null, 'por']],
   matches: [
     { date: '2026-10-05', status: 'closed', sa: 3, sb: 4, cob: 'Willy',
       a: [['Bruno', 1], ['Leo', 0, 1, 1, 1], ['Nico', 0, 1, 0, 1], ['Dario', 0, 1, 0, 1], ['Edu', 0, 0, 1, 1], ['Fer', 0, 0, 1, 1], ['Guille', 0], ['Hugo', 0, 0, 0, 1], ['Iker', 0, 0, 0, 1], ['Joel', 0], ['Willy', 0]],

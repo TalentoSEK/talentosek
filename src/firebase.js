@@ -118,6 +118,7 @@ window.createBackend = function () {
       if (patch.aka) out.aka = patch.aka;
       return guard(updateDoc(doc(db, 'players', pid), out));
     },
+    setPosition: function (pid, pos) { return guard(updateDoc(doc(db, 'players', pid), { pos: pos || null })); },
     deletePlayer: function (pid) {
       const p = st.players[pid];
       if (!p) return Promise.resolve();

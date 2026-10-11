@@ -5,16 +5,16 @@ window.createBackend = function () {
   var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {} };
   var seq = 0, t0 = Date.now() - 3 * 86400000;
   function id(p) { seq++; return p + seq.toString(36) + Math.random().toString(36).slice(2, 6); }
-  function add(name, aka, uid) {
+  function add(name, aka, uid, pos) {
     var pid = id('p');
-    db.players[pid] = { id: pid, name: name, aka: aka || [], uid: uid || null, guestOf: null };
+    db.players[pid] = { id: pid, name: name, aka: aka || [], uid: uid || null, guestOf: null, pos: pos || null };
     if (uid) db.users[uid] = pid;
     return pid;
   }
   // Los datos de prueba llegan aparte (window.TS_SEED) para que el código no lleve nombres dentro.
   var seed = window.TS_SEED || { players: [], admin: null, matches: [], personas: [] };
   var N = {};
-  seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2]); });
+  seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2], r[3]); });
   if (seed.admin) db.admins[seed.admin] = true;
   function entry(t, gk, i, g, a, og, paid) { return { t: t, gk: !!gk, at: t0 + i * 60000, g: g || 0, a: a || 0, og: og || 0, paid: !!paid }; }
   // cada jugador de un partido: [nombre, portero, goles, asistencias, pagado]
@@ -74,7 +74,7 @@ window.createBackend = function () {
       return op(function () {
         var name = String(data.name || '').trim().slice(0, 30);
         if (!name) deny('Escribe un nombre.');
-        var pid = id('p'), p = { id: pid, name: name, aka: [], uid: null, guestOf: null };
+        var pid = id('p'), p = { id: pid, name: name, aka: [], uid: null, guestOf: null, pos: null };
         if (data.guestOf) {
           if (data.guestOf !== mine() && !admin()) deny();
           p.guestOf = data.guestOf;
@@ -102,6 +102,14 @@ window.createBackend = function () {
         if (!p) deny('Ese jugador ya no existe.');
         if (patch.name !== undefined) p.name = String(patch.name).trim().slice(0, 30) || p.name;
         if (patch.aka) p.aka = patch.aka;
+      });
+    },
+    setPosition: function (pid, pos) {
+      return op(function () {
+        var p = db.players[pid];
+        if (!p) deny('Ese jugador ya no existe.');
+        if (!admin() && pid !== mine()) deny();
+        p.pos = pos || null;
       });
     },
     deletePlayer: function (pid) {
