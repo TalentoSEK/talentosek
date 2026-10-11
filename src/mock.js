@@ -30,7 +30,7 @@ window.createBackend = function () {
       fin = {};
       Object.keys(es).forEach(function (pid, j) { var e = es[pid]; if (e.t !== 's') fin[pid] = { t: e.t, gk: e.gk, g: e.g, a: e.a, og: e.og, o: j }; });
     }
-    db.matches[mid] = { id: mid, date: sm.date, time: '20:30', status: sm.status, sa: sm.sa || 0, sb: sm.sb || 0, cob: sm.cob ? N[sm.cob] : null, final: fin };
+    db.matches[mid] = { id: mid, date: sm.date, time: '20:30', status: sm.status, sa: sm.sa || 0, sb: sm.sb || 0, cob: sm.cob ? N[sm.cob] : null, final: fin, drawAt: null, endAt: null };
     db.entries[mid] = es;
   });
 
@@ -159,7 +159,7 @@ window.createBackend = function () {
       return op(function () {
         if (!admin()) deny();
         var mid = 'm' + String(data.date).replace(/-/g, '') + id('');
-        db.matches[mid] = { id: mid, date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null, drawAt: data.drawAt || null, drawn: false };
+        db.matches[mid] = { id: mid, date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null, drawAt: data.drawAt || null, endAt: data.endAt || null, drawn: false };
         db.entries[mid] = {};
         return mid;
       });
@@ -170,6 +170,14 @@ window.createBackend = function () {
         var m = db.matches[mid];
         if (!m) deny('Ese partido ya no existe.');
         Object.keys(patch).forEach(function (k) { m[k] = patch[k]; });
+      });
+    },
+    advanceMatch: function (mid) {
+      return op(function () {
+        var m = db.matches[mid];
+        if (!m) deny('Ese partido ya no existe.');
+        if (!admin() && !(mine() && m.status === 'open' && m.endAt && Date.now() >= m.endAt)) deny();
+        if (m.status === 'open') m.status = 'review';
       });
     },
     drawCollector: function (mid, pid) {

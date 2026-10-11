@@ -87,7 +87,10 @@ service cloud.firestore {
             && resource.data.get('drawAt', null) != null && request.time.toMillis() >= resource.data.drawAt
             && request.resource.data.drawn == true && request.resource.data.cob is string
             && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.t in ['a', 'b']
-            && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.gk == false);
+            && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.gk == false)
+        // Fin del partido: cualquier jugador puede pasarlo de convocatoria a resultado a partir de su hora de fin.
+        || (hasPlayer() && resource.data.status == 'open' && request.resource.data.status == 'review' && changedOnly(['status'])
+            && resource.data.get('endAt', null) != null && request.time.toMillis() >= resource.data.endAt);
 
       function status() { return get(/databases/$(database)/documents/matches/$(mid)).data.status; }
 

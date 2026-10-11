@@ -7,6 +7,7 @@ p.on('console',m=>{if(m.type()==='error'&&!/ERR_FAILED/.test(m.text()))errs.push
 await p.route('https://app.test/',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:html}));
 await p.route(/gstatic\.com\/firebasejs/,r=>r.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:fake}));
 await p.route(/fonts\./,r=>r.abort());
+await p.clock.install({ time: new Date('2026-10-19T19:00:00') });
 await p.goto('https://app.test/',{waitUntil:'domcontentloaded'});
 const txt=async sel=>(await p.innerText(sel)).replace(/\s+/g,' ');
 console.log('primer pintado:', await txt('.cuando')); await p.waitForTimeout(200);
@@ -17,13 +18,15 @@ await p.click('[data-fk="tab-yo"]'); console.log('yo:', (await txt('.vista')).sl
 await p.click('[data-act=bootstrap]'); await p.waitForTimeout(150); console.log('admin:', /Eres administrador/.test(await txt('.vista')), '| puede repetir:', !!(await p.$('[data-act=bootstrap]')));
 await p.fill('#add-names','Toni\nOmar\nToni'); await p.click('[data-form=add-players] button'); await p.waitForTimeout(250); await p.selectOption('#cap-add',{label:'Omar'}); await p.waitForTimeout(150); await p.selectOption('#cap-add',{label:'Leo'}); await p.waitForTimeout(150); await p.click('[data-act=cap-move][data-d="-1"]:not([disabled])'); await p.waitForTimeout(150); console.log('capitanes:', (await txt('.tarjeta:has(#cap-add)')).slice(150,230));
 await p.fill('#poll-q','¿Quién llega tarde?'); await p.fill('#poll-o','Toni\nWilly\nToni'); await p.click('[data-form=poll] button'); await p.waitForTimeout(200); await p.selectOption('#mi-voto',{label:'Willy'}); await p.waitForTimeout(200); console.log('encuesta:', (await txt('.tarjeta:has(#mi-voto)')).slice(0,120));
-await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-05'); await p.click('[data-form=open-match] button'); await p.waitForTimeout(200);
+await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-19'); await p.click('[data-form=open-match] button'); await p.waitForTimeout(200);
 console.log('convocatoria:', await txt('.cuando'), '|', await txt('.estado'));
 await p.click('.libre[data-t=b][data-gk="0"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));
 await p.click('[data-act=sheet][data-k=guest]'); await p.fill('#inv-n','Willy'); await p.selectOption('#inv-t','a'); await p.click('[data-form=guest] button[type=submit]'); await p.waitForTimeout(250);
-await p.waitForTimeout(3200); console.log('sorteo:', await p.evaluate(()=>[...window.__store].filter(([k])=>k.startsWith('matches/')&&!k.includes('/entries/')).map(([k,v])=>JSON.stringify({cob:!!v.cob,drawn:v.drawn,drawAt:!!v.drawAt}))[0]), '|', await p.evaluate(()=>[...document.querySelectorAll('.estado')].pop().textContent));
+console.log('antes de las 20:00:', await p.evaluate(()=>[...document.querySelectorAll('.nota')].map(n=>n.textContent).filter(t=>/sortea|se abre solo/.test(t)).join(' / ')));
+await p.clock.fastForward('01:01:00'); await p.waitForTimeout(3300); console.log('sorteo:', await p.evaluate(()=>[...window.__store].filter(([k])=>k.startsWith('matches/')&&!k.includes('/entries/')).map(([k,v])=>JSON.stringify({cob:!!v.cob,drawn:v.drawn,drawAt:!!v.drawAt}))[0]), '|', await p.evaluate(()=>[...document.querySelectorAll('.estado')].pop().textContent));
 console.log('blancos:', await txt('.lado.a')); console.log('negros fila yo:', await txt('.fila.yo'), '| brazalete:', !!(await p.$('.fila.yo .cap')));
-await p.click('[data-fk=jugado]'); await p.waitForTimeout(200); await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="yo-g-p"]'); await p.waitForTimeout(150);
+console.log('estado antes de las 22:00:', await p.evaluate(()=>!!document.querySelector('.marcador')));
+await p.clock.fastForward('02:05:00'); await p.waitForTimeout(600); console.log('pasa solo a resultado:', await p.evaluate(()=>!!document.querySelector('.marcador'))); await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="yo-g-p"]'); await p.waitForTimeout(150);
 console.log('resultado:', await txt('.marcador'), '|', await p.evaluate(()=>[...document.querySelectorAll('.aviso')].map(a=>a.textContent).join(' / ')));
 console.log('pagos:', (await txt('.tarjeta:has(select[data-in=cob])')).slice(0,110));
 await p.click('[data-fk=close]'); await p.click('[data-fk=closeyes]'); await p.waitForTimeout(250);

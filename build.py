@@ -17,7 +17,7 @@ def page(scripts, fragment=False):
         return body
     return ('<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
-            '<meta name="theme-color" content="#ffd400">\n'
+            '<meta name="theme-color" content="#fde100">\n'
             '<style>html{padding-top:env(safe-area-inset-top,0px)}body{margin:0}[hidden]{display:none!important}</style>\n'
             '</head>\n<body>\n' + body + '</body>\n</html>\n')
 

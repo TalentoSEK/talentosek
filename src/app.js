@@ -71,6 +71,12 @@
     var d = new Date(m.date + 'T' + (m.time || '20:30') + ':00');
     return isNaN(d) ? Infinity : d.getTime() - 30 * 60000;
   }
+  function endTime(m) {
+    if (m.endAt === null) return Infinity;   // reabierto a mano por un administrador: ya no pasa solo
+    if (m.endAt) return m.endAt;
+    var d = new Date(m.date + 'T' + (m.time || '20:30') + ':00');
+    return isNaN(d) ? Infinity : d.getTime() + 90 * 60000;
+  }
   function hhmm(ms) { var d = new Date(ms), h = d.getHours(), mi = d.getMinutes(); return (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi; }
   function candidates(m) {
     var field = side(m, 'a').concat(side(m, 'b')).filter(function (x) { return !x.e.gk && idx[x.pid] && !idx[x.pid].guestOf; }).map(function (x) { return x.pid; });
@@ -237,6 +243,7 @@
     return '<section class="vista" aria-label="Convocatoria"><div class="bloque"><h1 class="cuando">' + esc(largo(m.date)) + '</h1>' +
       '<p class="donde">A las ' + esc(m.time || '20:30') + ' en el SEK. Hay ' + n + ' apuntados de ' + (CAP * 2) + '.</p></div>' +
       miEstado(m) + pizarra(m) + suplentes(m) + sorteoLine(m) +
+      (isFinite(endTime(m)) ? '<p class="nota">A las ' + hhmm(endTime(m)) + ', al acabar el partido, se abre solo el resultado para apuntar goles y pagos.</p>' : '') +
       '<div class="fila-btn">' + (S.me.pid ? '<button class="btn" data-act="sheet" data-k="guest" data-mid="' + m.id + '" data-fk="inv">Traer a un invitado</button>' : '') +
       '<button class="btn" data-act="copy" data-mid="' + m.id + '" data-fk="copy">Copiar lista para WhatsApp</button></div>' +
       (S.me.isAdmin ? '<div class="tarjeta"><h3>Administrar</h3><p class="nota">Toca cualquier nombre para moverlo o quitarlo. Cuando acabe el partido, pásalo a resultado para que cada uno apunte lo suyo.</p>' +
@@ -669,7 +676,9 @@
     },
     status: function (b) {
       ui.confirm = null;
-      run(B.updateMatch(b.dataset.mid, { status: b.dataset.v, settled: false }), b.dataset.v === 'review' ? 'Listo. Ya se pueden apuntar goles y pagos.' : 'Convocatoria abierta otra vez.').then(function () {
+      var patch = { status: b.dataset.v, settled: false };
+      if (b.dataset.v === 'open') patch.endAt = null;
+      run(B.updateMatch(b.dataset.mid, patch), b.dataset.v === 'review' ? 'Listo. Ya se pueden apuntar goles y pagos.' : 'Convocatoria abierta otra vez.').then(function () {
         if (b.dataset.v === 'review') { ui.tab = 'partido'; render(); }
       });
     },
@@ -768,7 +777,7 @@
     'open-match': function () {
       var d = ui.newDate || nextMonday();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Pon la fecha del partido.'); return; }
-      run(B.createMatch({ date: d, time: '20:30', drawAt: drawTime({ date: d, time: '20:30' }) }), 'Convocatoria abierta.');
+      run(B.createMatch({ date: d, time: '20:30', drawAt: drawTime({ date: d, time: '20:30' }), endAt: endTime({ date: d, time: '20:30' }) }), 'Convocatoria abierta.');
     }
   };
   app.addEventListener('click', function (ev) {
@@ -817,9 +826,9 @@
       B.updateMatch(m.id, { settled: true }).then(null, function () { delete settling[m.id]; });
     });
   }
-  // El sorteo no tiene servidor: lo hace el primer móvil identificado que tenga la app abierta a partir de la hora.
-  // Las reglas solo dejan escribirlo una vez y solo con un jugador de campo de ese partido.
-  var drawing = {}, drawTimer = null;
+  // Ni el sorteo ni el paso a resultado tienen servidor: los hace el primer móvil identificado que tenga la app abierta
+  // a partir de la hora. Las reglas solo dejan hacer cada cosa una vez y a partir de su hora.
+  var drawing = {}, advancing = {}, drawTimer = null;
   function sorteo() {
     clearTimeout(drawTimer);
     if (!S.me.pid) return;
@@ -827,7 +836,15 @@
     S.matches.forEach(function (m) {
       if (m.status === 'closed') return;
       var t = drawTime(m);
-      if (S.me.isAdmin && !m.drawAt && isFinite(t)) { B.updateMatch(m.id, { drawAt: t }).then(null, function () {}); }
+      // partidos creados antes de existir estas horas: el móvil de un administrador se las pone
+      if (S.me.isAdmin && (m.drawAt === undefined || m.endAt === undefined) && isFinite(t)) {
+        B.updateMatch(m.id, { drawAt: t, endAt: m.endAt === undefined ? endTime(m) : m.endAt }).then(null, function () {});
+      }
+      if (m.status === 'open') {
+        var te = endTime(m);
+        if (now >= te) { if (!advancing[m.id]) { advancing[m.id] = true; B.advanceMatch(m.id).then(null, function () {}); } }
+        else if (isFinite(te)) next = Math.min(next, te);
+      }
       if (m.cob || m.drawn || drawing[m.id] || !S.entries[m.id]) return;
       if (now < t) { next = Math.min(next, t); return; }
       if (!candidates(m).length) return;
