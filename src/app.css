@@ -72,6 +72,8 @@ h2{font-weight:800;font-stretch:125%;font-size:22px;letter-spacing:-.01em;text-w
 .fila .n{font-stretch:62%;font-weight:700;color:var(--g);font-variant-numeric:tabular-nums}
 .fila .nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .fila .ext{font-size:13px;font-stretch:75%;color:var(--g);white-space:nowrap}
+.cap{display:inline-grid;place-items:center;width:18px;height:18px;margin-right:5px;border-radius:4px;background:var(--amarilla);color:#000;font-weight:800;font-size:12px;font-stretch:100%;vertical-align:middle}
+.fila.yo .cap{background:#000;color:var(--amarilla)}
 .fila.yo{background:var(--amarilla);color:#000}
 .fila.yo .n,.fila.yo .ext{color:#000}
 .fila.libre .nom{font-weight:400;color:var(--g)}

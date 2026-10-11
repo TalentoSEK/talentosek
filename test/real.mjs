@@ -15,12 +15,13 @@ await p.click('[data-act=identify]'); await p.fill('#nuevo','Leo'); await p.clic
 console.log('quien:', await p.textContent('.quien'));
 await p.click('[data-fk="tab-yo"]'); console.log('yo:', (await txt('.vista')).slice(0,160));
 await p.click('[data-act=bootstrap]'); await p.waitForTimeout(150); console.log('admin:', /Eres administrador/.test(await txt('.vista')), '| puede repetir:', !!(await p.$('[data-act=bootstrap]')));
+await p.fill('#add-names','Toni\nOmar\nToni'); await p.click('[data-form=add-players] button'); await p.waitForTimeout(250); await p.selectOption('#cap-add',{label:'Omar'}); await p.waitForTimeout(150); await p.selectOption('#cap-add',{label:'Leo'}); await p.waitForTimeout(150); await p.click('[data-act=cap-move][data-d="-1"]:not([disabled])'); await p.waitForTimeout(150); console.log('capitanes:', (await txt('.tarjeta:has(#cap-add)')).slice(150,230));
 await p.fill('#poll-q','¿Quién llega tarde?'); await p.fill('#poll-o','Toni\nWilly\nToni'); await p.click('[data-form=poll] button'); await p.waitForTimeout(200); await p.selectOption('#mi-voto',{label:'Willy'}); await p.waitForTimeout(200); console.log('encuesta:', (await txt('.tarjeta:has(#mi-voto)')).slice(0,120));
 await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-12'); await p.click('[data-form=open-match] button'); await p.waitForTimeout(200);
 console.log('convocatoria:', await txt('.cuando'), '|', await txt('.estado'));
 await p.click('.libre[data-t=b][data-gk="0"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));
 await p.click('[data-act=sheet][data-k=guest]'); await p.fill('#inv-n','Willy'); await p.selectOption('#inv-t','a'); await p.click('[data-form=guest] button[type=submit]'); await p.waitForTimeout(250);
-console.log('blancos:', await txt('.lado.a')); console.log('negros fila yo:', await txt('.fila.yo'));
+console.log('blancos:', await txt('.lado.a')); console.log('negros fila yo:', await txt('.fila.yo'), '| brazalete:', !!(await p.$('.fila.yo .cap')));
 await p.click('[data-fk=jugado]'); await p.waitForTimeout(200); await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="yo-g-p"]'); await p.waitForTimeout(150);
 console.log('resultado:', await txt('.marcador'), '|', await p.evaluate(()=>[...document.querySelectorAll('.aviso')].map(a=>a.textContent).join(' / ')));
 await p.selectOption('select[data-in=cob]',{label:'Leo'}); await p.waitForTimeout(150);

@@ -25,10 +25,10 @@ service cloud.firestore {
       allow create: if signedIn() && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Encuesta de bienvenida: la definen los administradores.
-    match /meta/poll {
+    // Ajustes de la app (encuesta de bienvenida, jerarquía de capitanes...): los leen todos, los cambian los administradores.
+    match /meta/{name} {
       allow read: if signedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() && name != 'claimed';
     }
 
     match /admins/{uid} {

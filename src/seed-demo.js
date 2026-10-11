@@ -2,6 +2,7 @@
 window.TS_SEED = {
   note: 'Los jugadores y los resultados son inventados.',
   admin: 'u-admin',
+  captains: ['Willy', 'Leo', 'Manu', 'Omar'],
   poll: { q: '¿Quién llega siempre tarde?', options: ['Bruno', 'Manu', 'Toni', 'Willy'] },
   personas: [
     { uid: 'u-admin', label: 'Leo, administrador' },

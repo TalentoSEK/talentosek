@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -52,6 +52,14 @@
     side(m, t).forEach(function (x) { n += x.e.g || 0; });
     side(m, o).forEach(function (x) { n += x.e.og || 0; });
     return n;
+  }
+  // El capitán de un equipo es, de los que juegan en él, el que va primero en la jerarquía que fijan los administradores.
+  function capOrder() { return (S.captains || []).filter(function (pid) { return !!idx[pid]; }); }
+  function captainOf(m, t) {
+    var team = {}, order = capOrder();
+    side(m, t).forEach(function (x) { team[x.pid] = true; });
+    for (var i = 0; i < order.length; i++) if (team[order[i]]) return order[i];
+    return null;
   }
   function poll() { var p = S.poll; return p && p.active && p.q && p.options && p.options.length ? p : null; }
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
@@ -143,9 +151,10 @@
     if (x.e.og) bits.push(x.e.og + 'pp');
     return bits.join(' ') || (x.e.gk ? 'portero' : '');
   }
-  function fila(m, n, x) {
+  var CAP_BADGE = '<span class="cap" title="Capitán">C</span>';
+  function fila(m, n, x, cap) {
     var can = m.status !== 'closed' && (S.me.isAdmin || owns(x.pid));
-    var inner = '<span class="n">' + n + '</span><span class="nom">' + esc(nameOf(x.pid)) + '</span><span class="ext">' + extra(m, x) + '</span>';
+    var inner = '<span class="n">' + n + '</span><span class="nom">' + esc(nameOf(x.pid)) + '</span><span class="ext">' + (cap === x.pid ? CAP_BADGE : '') + extra(m, x) + '</span>';
     var cls = 'fila' + (x.pid === S.me.pid ? ' yo' : '');
     return can
       ? '<li><button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + inner + '</button></li>'
@@ -159,10 +168,10 @@
   }
   function lado(m, t) {
     var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; }), html = '';
-    var full = s.length >= CAP;
-    html += gk ? fila(m, 1, gk) : libre(m, t, 1, true, full);
+    var full = s.length >= CAP, cap = captainOf(m, t);
+    html += gk ? fila(m, 1, gk, cap) : libre(m, t, 1, true, full);
     var rows = m.status === 'open' ? CAP - 1 : field.length;
-    for (var i = 0; i < Math.max(rows, field.length); i++) html += field[i] ? fila(m, i + 2, field[i]) : libre(m, t, i + 2, false, full);
+    for (var i = 0; i < Math.max(rows, field.length); i++) html += field[i] ? fila(m, i + 2, field[i], cap) : libre(m, t, i + 2, false, full);
     return '<section class="lado ' + t + '" aria-label="' + TEAM[t] + '"><h3>' + TEAM[t] + ' <span>' + s.length + (m.status === 'open' ? ' de ' + CAP : '') + '</span></h3><ol>' + html + '</ol></section>';
   }
   function pizarra(m) { return '<div class="pizarra">' + lado(m, 'a') + lado(m, 'b') + '</div>'; }
@@ -323,8 +332,10 @@
 
   /* ---------- pestaña Jugados ---------- */
   function alineacion(m, t) {
+    var cap = captainOf(m, t);
     return '<ul>' + side(m, t).map(function (x) {
       var bits = [];
+      if (cap === x.pid) bits.push('capitán');
       if (x.e.gk) bits.push('portero');
       if (x.e.g) bits.push(x.e.g + (x.e.g === 1 ? ' gol' : ' goles'));
       if (x.e.a) bits.push(x.e.a + ' asist.');
@@ -380,7 +391,21 @@
           if (p.guestOf) bits.push('invitado de ' + nameOf(p.guestOf));
           return '<div class="jug"><div class="q"><b>' + esc(p.name) + '</b><span>' + (bits.length ? esc(bits.join(', ')) : 'sin móvil asociado') + '</span></div>' +
             '<button class="btn min" data-act="sheet" data-k="player" data-pid="' + p.id + '" data-fk="g-' + p.id + '">Gestionar</button></div>';
-        }).join('') + '</div></div>';
+        }).join('') + '</div>' +
+        '<form data-form="add-players" class="bloque"><div class="campo"><label for="add-names">Añadir jugadores, uno por línea</label>' +
+        '<textarea id="add-names" data-in="addNames" style="min-height:96px;font-size:16px" placeholder="Así encontrarán su nombre en la lista al entrar">' + esc(ui.addNames) + '</textarea></div>' +
+        '<button class="btn" type="submit">Añadir jugadores</button></form></div>';
+      var order = capOrder(), rest = S.players.filter(function (p) { return order.indexOf(p.id) < 0; }).sort(byName);
+      html += '<div class="tarjeta"><h3>Capitanes</h3><p class="nota">En cada equipo lleva el brazalete el que esté más arriba en esta lista de entre los que juegan. Ordénala de mayor a menor rango.</p>' +
+        (order.length ? '<div>' + order.map(function (pid, i) {
+          var at = 'data-pid="' + pid + '"';
+          return '<div class="jug"><div class="q"><b>' + (i + 1) + '. ' + esc(nameOf(pid)) + '</b></div><div class="fila-btn" style="flex-wrap:nowrap">' +
+            '<button class="btn min" data-act="cap-move" ' + at + ' data-d="-1" data-fk="cu-' + pid + '" aria-label="Subir a ' + esc(nameOf(pid)) + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+            '<button class="btn min" data-act="cap-move" ' + at + ' data-d="1" data-fk="cd-' + pid + '" aria-label="Bajar a ' + esc(nameOf(pid)) + '"' + (i === order.length - 1 ? ' disabled' : '') + '>↓</button>' +
+            '<button class="btn min peligro" data-act="cap-del" ' + at + ' data-fk="cx-' + pid + '">Quitar</button></div></div>';
+        }).join('') + '</div>' : '<p class="nota">Todavía no hay nadie en la jerarquía.</p>') +
+        (rest.length ? '<div class="campo" style="max-width:280px"><label for="cap-add">Añadir al final de la lista</label><select id="cap-add" data-in="capadd"><option value="">Elige un jugador</option>' +
+          rest.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div>' : '') + '</div>';
     }
     if (S.me.isAdmin) {
       var pq = ui.pollQ != null ? ui.pollQ : (S.poll && S.poll.q) || '', po = ui.pollOpts != null ? ui.pollOpts : ((S.poll && S.poll.options) || []).join('\n');
@@ -521,9 +546,10 @@
     var out = [largo(m.date) + ' ' + (m.time || '20:30') + ' SEK', 'Bizum ' + FEE + ' euros', ''];
     ['a', 'b'].forEach(function (t) {
       var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; });
+      var cap = captainOf(m, t), nm = function (x) { return x ? nameOf(x.pid) + (x.pid === cap ? ' (C)' : '') : ''; };
       out.push(TEAM[t].toUpperCase());
-      out.push('1. ' + (gk ? nameOf(gk.pid) : ''));
-      for (var i = 0; i < Math.max(CAP - 1, field.length); i++) out.push((i + 2) + '. ' + (field[i] ? nameOf(field[i].pid) : ''));
+      out.push('1. ' + nm(gk));
+      for (var i = 0; i < Math.max(CAP - 1, field.length); i++) out.push((i + 2) + '. ' + nm(field[i]));
       out.push('');
     });
     out.push('Suplentes:');
@@ -640,6 +666,13 @@
       ui.confirm = null;
       run(B.updateMatch(m.id, { status: 'closed', final: final }), 'Partido cerrado. Ya cuenta en la tabla.').then(function () { ui.tab = 'tabla'; render(); });
     },
+    'cap-move': function (b) {
+      var order = capOrder(), i = order.indexOf(b.dataset.pid), j = i + (+b.dataset.d);
+      if (i < 0 || j < 0 || j >= order.length) return;
+      order.splice(j, 0, order.splice(i, 1)[0]);
+      run(B.setCaptains(order));
+    },
+    'cap-del': function (b) { run(B.setCaptains(capOrder().filter(function (pid) { return pid !== b.dataset.pid; }))); },
     bootstrap: function () { run(B.bootstrapAdmin(), 'Hecho. Ya eres administrador.'); },
     'release-me': function () { ui.confirm = null; run(B.releasePlayer(S.me.pid)).then(function () { ui.onboarding = true; render(); }); },
     release: function (b) { ui.sheet = null; run(B.releasePlayer(b.dataset.pid), 'Móvil liberado. El nombre vuelve a estar libre.'); },
@@ -669,6 +702,17 @@
       if (S.players.some(function (p) { return p.id !== sh.pid && norm(p.name) === norm(name); })) { toast('Ya hay otro jugador con ese nombre.'); return; }
       ui.sheet = null;
       run(B.updatePlayer(sh.pid, { name: name }), 'Nombre cambiado.');
+    },
+    'add-players': function () {
+      var seen = {}, names = ui.addNames.split(/\n|,/).map(function (n) { return n.trim().replace(/\s+/g, ' ').slice(0, 30); }).filter(function (n) {
+        var k = norm(n);
+        if (!n || seen[k] || S.players.some(function (p) { return norm(p.name) === k; })) return false;
+        seen[k] = true; return true;
+      });
+      if (!names.length) { toast('Escribe algún nombre que no esté ya en la lista.'); return; }
+      Promise.all(names.map(function (n) { return B.createPlayer({ name: n }); })).then(function () {
+        ui.addNames = ''; toast(names.length === 1 ? names[0] + ' añadido.' : names.length + ' jugadores añadidos.'); render();
+      }, function (e) { toast(e && e.code === 'denied' ? e.message : 'No se han podido añadir. Vuelve a intentarlo.'); });
     },
     poll: function () {
       var q = (ui.pollQ != null ? ui.pollQ : (S.poll && S.poll.q) || '').trim().slice(0, 80), seen = {};
@@ -706,6 +750,8 @@
     } else if (k === 'mypoll') {
       var pp = poll();
       if (ev.type === 'change' && pp) run(B.setProfile(el.dataset.pid, { poll: el.value === '' ? null : pp.options[+el.value] || null }), 'Respuesta guardada.');
+    } else if (k === 'capadd') {
+      if (ev.type === 'change' && el.value && idx[el.value]) run(B.setCaptains(capOrder().concat([el.value])));
     } else if (k === 'cob') {
       if (ev.type === 'change') run(B.updateMatch(el.dataset.mid, { cob: el.value || null }));
     } else if (k in ui) {

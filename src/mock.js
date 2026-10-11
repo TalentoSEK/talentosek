@@ -2,7 +2,7 @@
    los permisos de aquí son los mismos que tendrán las reglas de seguridad. */
 window.createBackend = function () {
   'use strict';
-  var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {}, poll: null };
+  var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {}, poll: null, captains: [] };
   var seq = 0, t0 = Date.now() - 3 * 86400000;
   function id(p) { seq++; return p + seq.toString(36) + Math.random().toString(36).slice(2, 6); }
   function add(name, aka, uid, pos) {
@@ -16,6 +16,7 @@ window.createBackend = function () {
   var N = {};
   seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2], r[3]); });
   if (seed.admin) db.admins[seed.admin] = true;
+  if (seed.captains) db.captains = seed.captains.map(function (n) { return N[n]; }).filter(Boolean);
   if (seed.poll) db.poll = { q: seed.poll.q, options: seed.poll.options, active: true };
   function entry(t, gk, i, g, a, og, paid) { return { t: t, gk: !!gk, at: t0 + i * 60000, g: g || 0, a: a || 0, og: og || 0, paid: !!paid }; }
   // cada jugador de un partido: [nombre, portero, goles, asistencias, pagado]
@@ -40,6 +41,7 @@ window.createBackend = function () {
       players: Object.keys(db.players).map(function (k) { return db.players[k]; }),
       admins: db.admins,
       poll: db.poll,
+      captains: db.captains,
       matches: Object.keys(db.matches).map(function (k) { return db.matches[k]; }),
       entries: db.entries
     });
@@ -114,6 +116,12 @@ window.createBackend = function () {
         if (!admin() && pid !== mine()) deny();
         if ('pos' in patch) p.pos = patch.pos || null;
         if ('poll' in patch) p.poll = patch.poll || null;
+      });
+    },
+    setCaptains: function (order) {
+      return op(function () {
+        if (!admin()) deny();
+        db.captains = order.slice();
       });
     },
     setPoll: function (data) {
