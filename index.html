@@ -397,8 +397,10 @@ window.createBackend = function () {
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
   function room(m, t, gk, moving) {
     if (t === 's') return true;
+    // Caben 11 por equipo, con portero o sin él: si se juega sin portero, los 11 pueden ser de campo.
     var s = side(m, t).filter(function (x) { return x.pid !== moving; });
-    return gk ? !s.some(function (x) { return x.e.gk; }) : s.filter(function (x) { return !x.e.gk; }).length < CAP - 1;
+    if (s.length >= CAP) return false;
+    return gk ? !s.some(function (x) { return x.e.gk; }) : true;
   }
   function dues(m) {
     var payers = side(m, 'a').concat(side(m, 'b')).filter(function (x) { return !x.e.gk; }).map(function (x) { return x.pid; });
@@ -489,17 +491,18 @@ window.createBackend = function () {
       ? '<li><button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + inner + '</button></li>'
       : '<li><div class="' + cls + '">' + inner + '</div></li>';
   }
-  function libre(m, t, n, gk) {
+  function libre(m, t, n, gk, full) {
     var label = gk ? 'Falta portero' : 'Libre';
-    if (m.status !== 'open') return gk ? '<li><div class="fila libre"><span class="n">1</span><span class="nom">Sin portero</span><span class="ext"></span></div></li>' : '';
+    if (m.status !== 'open' || full) return gk ? '<li><div class="fila libre"><span class="n">1</span><span class="nom">Sin portero</span><span class="ext"></span></div></li>' : '';
     return '<li><button class="fila libre" data-act="join" data-mid="' + m.id + '" data-t="' + t + '" data-gk="' + (gk ? 1 : 0) + '" data-fk="l-' + t + n + '" aria-label="' +
       (gk ? 'Ponerme de portero en ' : 'Apuntarme en ') + TEAM[t] + '"><span class="n">' + n + '</span><span class="nom">' + label + '</span><span class="ext"></span></button></li>';
   }
   function lado(m, t) {
     var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; }), html = '';
-    html += gk ? fila(m, 1, gk) : libre(m, t, 1, true);
+    var full = s.length >= CAP;
+    html += gk ? fila(m, 1, gk) : libre(m, t, 1, true, full);
     var rows = m.status === 'open' ? CAP - 1 : field.length;
-    for (var i = 0; i < Math.max(rows, field.length); i++) html += field[i] ? fila(m, i + 2, field[i]) : libre(m, t, i + 2, false);
+    for (var i = 0; i < Math.max(rows, field.length); i++) html += field[i] ? fila(m, i + 2, field[i]) : libre(m, t, i + 2, false, full);
     return '<section class="lado ' + t + '" aria-label="' + TEAM[t] + '"><h3>' + TEAM[t] + ' <span>' + s.length + (m.status === 'open' ? ' de ' + CAP : '') + '</span></h3><ol>' + html + '</ol></section>';
   }
   function pizarra(m) { return '<div class="pizarra">' + lado(m, 'a') + lado(m, 'b') + '</div>'; }
@@ -831,7 +834,7 @@ window.createBackend = function () {
       var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; });
       out.push(TEAM[t].toUpperCase());
       out.push('1. ' + (gk ? nameOf(gk.pid) : ''));
-      for (var i = 0; i < CAP - 1; i++) out.push((i + 2) + '. ' + (field[i] ? nameOf(field[i].pid) : ''));
+      for (var i = 0; i < Math.max(CAP - 1, field.length); i++) out.push((i + 2) + '. ' + (field[i] ? nameOf(field[i].pid) : ''));
       out.push('');
     });
     out.push('Suplentes:');
