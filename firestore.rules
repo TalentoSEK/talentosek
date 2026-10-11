@@ -78,7 +78,16 @@ service cloud.firestore {
 
     match /matches/{mid} {
       allow read: if signedIn();
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        // Sorteo de quién cobra: lo escribe cualquier jugador, una sola vez, a partir de la hora fijada,
+        // y solo puede salir un jugador de campo apuntado a ese partido.
+        || (hasPlayer() && resource.data.cob == null && resource.data.get('drawn', false) != true
+            && resource.data.status != 'closed' && changedOnly(['cob', 'drawn'])
+            && resource.data.get('drawAt', null) != null && request.time.toMillis() >= resource.data.drawAt
+            && request.resource.data.drawn == true && request.resource.data.cob is string
+            && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.t in ['a', 'b']
+            && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.gk == false);
 
       function status() { return get(/databases/$(database)/documents/matches/$(mid)).data.status; }
 

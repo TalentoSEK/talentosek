@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -14,6 +14,8 @@
   }
   function byName(a, b) { return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }); }
   function nameOf(pid) { return idx[pid] ? idx[pid].name : 'Jugador borrado'; }
+  // Nombre para pintar: con el símbolo que un administrador le haya puesto a ese jugador, a su derecha.
+  function nm(pid) { var p = idx[pid]; return esc(nameOf(pid)) + (p && p.tag ? ' <span class="sim">' + esc(p.tag) + '</span>' : ''); }
   function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
   function iso(d) { var m = d.getMonth() + 1, x = d.getDate(); return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (x < 10 ? '0' : '') + x; }
   function nextMonday() {
@@ -60,6 +62,21 @@
     side(m, t).forEach(function (x) { team[x.pid] = true; });
     for (var i = 0; i < order.length; i++) if (team[order[i]]) return order[i];
     return null;
+  }
+  // Sorteo de quién cobra: media hora antes del partido, entre los jugadores de campo apuntados.
+  // No entran los porteros, los invitados ni quien haya cobrado en alguno de los 4 partidos anteriores.
+  var SKIP = 4;
+  function drawTime(m) {
+    if (m.drawAt) return m.drawAt;
+    var d = new Date(m.date + 'T' + (m.time || '20:30') + ':00');
+    return isNaN(d) ? Infinity : d.getTime() - 30 * 60000;
+  }
+  function hhmm(ms) { var d = new Date(ms), h = d.getHours(), mi = d.getMinutes(); return (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi; }
+  function candidates(m) {
+    var field = side(m, 'a').concat(side(m, 'b')).filter(function (x) { return !x.e.gk && idx[x.pid] && !idx[x.pid].guestOf; }).map(function (x) { return x.pid; });
+    var recent = sorted().filter(function (o) { return o.date < m.date && o.cob; }).slice(-SKIP).map(function (o) { return o.cob; });
+    var fresh = field.filter(function (pid) { return recent.indexOf(pid) < 0; });
+    return fresh.length ? fresh : field;   // si todos han cobrado hace poco, entran todos
   }
   function poll() { var p = S.poll; return p && p.active && p.q && p.options && p.options.length ? p : null; }
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
@@ -149,12 +166,13 @@
     if (x.e.g) bits.push(x.e.g + 'g');
     if (x.e.a) bits.push(x.e.a + 'a');
     if (x.e.og) bits.push(x.e.og + 'pp');
+    if (x.e.paid) bits.push('<span title="Ha pagado">💵</span>');
     return bits.join(' ') || (x.e.gk ? 'portero' : '');
   }
   var CAP_BADGE = '<span class="cap" title="Capitán">C</span>';
   function fila(m, n, x, cap) {
     var can = m.status !== 'closed' && (S.me.isAdmin || owns(x.pid));
-    var inner = '<span class="n">' + n + '</span><span class="nom">' + esc(nameOf(x.pid)) + '</span><span class="ext">' + (cap === x.pid ? CAP_BADGE : '') + extra(m, x) + '</span>';
+    var inner = '<span class="n">' + n + '</span><span class="nom">' + nm(x.pid) + '</span><span class="ext">' + (cap === x.pid ? CAP_BADGE : '') + extra(m, x) + '</span>';
     var cls = 'fila' + (x.pid === S.me.pid ? ' yo' : '');
     return can
       ? '<li><button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + inner + '</button></li>'
@@ -192,7 +210,7 @@
             : '<li><span class="ficha">' + esc(nameOf(pid)) + '</span></li>';
         }).join('') + '</ul>' : '') +
         (S.me.isAdmin && d.unpaid.length ? '<p class="nota" style="color:inherit;opacity:.8">Toca un nombre cuando te haya pagado.</p>' : '') +
-        (meOwes ? '<button class="btn pri" data-act="pay" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-v="1" data-fk="yapague-' + m.id + '">Ya he pagado</button>' : '') +
+        (meOwes ? payButton(m, 'yapague-' + m.id) : '') +
         '</section>';
     }).join('');
   }
@@ -209,8 +227,8 @@
     return '<div class="sup"><h3>Suplentes</h3>' +
       (s.length ? '<ul>' + s.map(function (x) {
         var can = S.me.isAdmin || owns(x.pid), cls = 'ficha' + (x.pid === S.me.pid ? ' yo' : '');
-        return '<li>' + (can ? '<button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + esc(nameOf(x.pid)) + '</button>'
-          : '<span class="' + cls + '">' + esc(nameOf(x.pid)) + '</span>') + '</li>';
+        return '<li>' + (can ? '<button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + nm(x.pid) + '</button>'
+          : '<span class="' + cls + '">' + nm(x.pid) + '</span>') + '</li>';
       }).join('') + '</ul>' : '<p class="nota">Nadie todavía.</p>') +
       (m.status === 'open' && S.me.pid && !meIn ? '<button class="enlace" data-act="join" data-mid="' + m.id + '" data-t="s" data-gk="0" data-fk="join-s">Apuntarme de suplente</button>' : '') + '</div>';
   }
@@ -218,7 +236,7 @@
     var n = side(m, 'a').length + side(m, 'b').length;
     return '<section class="vista" aria-label="Convocatoria"><div class="bloque"><h1 class="cuando">' + esc(largo(m.date)) + '</h1>' +
       '<p class="donde">A las ' + esc(m.time || '20:30') + ' en el SEK. Hay ' + n + ' apuntados de ' + (CAP * 2) + '.</p></div>' +
-      miEstado(m) + pizarra(m) + suplentes(m) +
+      miEstado(m) + pizarra(m) + suplentes(m) + sorteoLine(m) +
       '<div class="fila-btn">' + (S.me.pid ? '<button class="btn" data-act="sheet" data-k="guest" data-mid="' + m.id + '" data-fk="inv">Traer a un invitado</button>' : '') +
       '<button class="btn" data-act="copy" data-mid="' + m.id + '" data-fk="copy">Copiar lista para WhatsApp</button></div>' +
       (S.me.isAdmin ? '<div class="tarjeta"><h3>Administrar</h3><p class="nota">Toca cualquier nombre para moverlo o quitarlo. Cuando acabe el partido, pásalo a resultado para que cada uno apunte lo suyo.</p>' +
@@ -245,21 +263,32 @@
       stepRow('Goles', e.g || 0, at + ' data-k="g"', 'yo-g') + stepRow('Asistencias', e.a || 0, at + ' data-k="a"', 'yo-a') + stepRow('En propia puerta', e.og || 0, at + ' data-k="og"', 'yo-og', 9) +
       '</div>';
   }
+  function payButton(m, key) {
+    return '<div class="pagar"><button class="pasta" data-act="pay" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-v="1" data-fk="' + key + '" aria-label="Ya he pagado">' +
+      '<span aria-hidden="true">🤑</span></button><p>Toca la cara cuando hayas pagado tus ' + FEE + ' €.</p></div>';
+  }
+  function sorteoLine(m) {
+    if (m.cob) return '<div class="estado"><p>Cobra ' + esc(nameOf(m.cob)) + '.' + (m.drawn ? ' Le ha tocado en el sorteo.' : '') + '</p></div>';
+    var t = drawTime(m);
+    return '<p class="nota">' + (Date.now() < t ? 'A las ' + hhmm(t) + ' se sortea quién cobra.' : 'El sorteo de quién cobra se hace en cuanto haya jugadores apuntados.') +
+      ' No entran los porteros ni quien haya cobrado en los últimos ' + SKIP + ' partidos.</p>';
+  }
   function pagosCard(m) {
     var es = ents(m.id), d = dues(m), all = side(m, 'a').concat(side(m, 'b'));
-    var who = m.cob ? '<p class="aviso">Cobra ' + esc(nameOf(m.cob)) + '. Son ' + FEE + ' € por Bizum.</p>' : '<p class="aviso">Todavía no se ha dicho quién cobra.</p>';
+    var who = m.cob ? '<p class="aviso">Cobra ' + esc(nameOf(m.cob)) + (m.drawn ? ', por sorteo' : '') + '. Son ' + FEE + ' € por Bizum.</p>' : '<p class="aviso">Todavía no se ha dicho quién cobra.</p>';
     var sel = S.me.isAdmin ? '<div class="campo"><label for="cob-' + m.id + '">¿Quién cobra?</label><select id="cob-' + m.id + '" data-in="cob" data-mid="' + m.id + '"><option value="">Sin decidir</option>' +
       all.map(function (x) { return '<option value="' + x.pid + '"' + (m.cob === x.pid ? ' selected' : '') + '>' + esc(nameOf(x.pid)) + '</option>'; }).join('') + '</select></div>' : '';
     var chips = d.payers.map(function (pid) {
       if (pid === m.cob) return '';
-      var on = !!(es[pid] && es[pid].paid), can = S.me.isAdmin || owns(pid), label = esc(nameOf(pid)) + (on ? ' ✓' : '');
+      var on = !!(es[pid] && es[pid].paid), can = S.me.isAdmin || owns(pid), label = esc(nameOf(pid)) + (on ? ' 💵' : '');
       return '<li>' + (can
         ? '<button class="ficha' + (on ? ' on' : '') + '" data-act="pay" data-mid="' + m.id + '" data-pid="' + pid + '" data-v="' + (on ? 0 : 1) + '" data-fk="pg-' + pid + '" aria-pressed="' + on + '">' + label + '</button>'
         : '<span class="ficha' + (on ? ' on' : '') + '">' + label + '</span>') + '</li>';
     }).join('');
     var mineUnpaid = d.unpaid.indexOf(S.me.pid) >= 0;
+    if (S.me.isAdmin) sel += '<button class="btn min" data-act="redraw" data-mid="' + m.id + '" data-fk="redraw" style="align-self:flex-start">Repetir el sorteo</button>';
     return '<div class="tarjeta"><h3>Pagos</h3>' + who + sel +
-      (mineUnpaid ? '<button class="btn pri" data-act="pay" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-v="1" data-fk="yapague">Ya he pagado</button>' : '') +
+      (mineUnpaid ? payButton(m, 'yapague') : '') +
       '<ul class="sup" style="padding:0;background:none;flex-direction:row;flex-wrap:wrap;gap:6px">' + chips + '</ul>' +
       '<p class="nota">Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '. Los porteros no pagan.</p></div>';
   }
@@ -315,7 +344,7 @@
       return '<th scope="col"' + (ui.sort === c[0] ? ' aria-sort="descending"' : '') + '><button data-act="sort" data-k="' + c[0] + '" data-fk="s-' + c[0] + '" title="Ordenar por ' + c[2] + '">' + c[1] + '</button></th>';
     }).join('') + '<th scope="col">Racha</th></tr>';
     var body = list.map(function (r, i) {
-      return '<tr' + (r.id === S.me.pid ? ' class="yo"' : '') + '><th scope="row"><span class="pos">' + (i + 1) + '</span>' + esc(r.name) + '</th>' +
+      return '<tr' + (r.id === S.me.pid ? ' class="yo"' : '') + '><th scope="row"><span class="pos">' + (i + 1) + '</span>' + nm(r.id) + '</th>' +
         COLS.map(function (c) { return '<td' + (ui.sort === c[0] ? ' class="on"' : '') + '>' + r[c[0]] + '</td>'; }).join('') +
         '<td><span class="racha">' + r.form.slice(-5).map(function (x) { return '<span class="r ' + x + '" title="' + (x === 'v' ? 'Victoria' : x === 'e' ? 'Empate' : 'Derrota') + '">' + x.toUpperCase() + '</span>'; }).join('') + '</span></td></tr>';
     }).join('');
@@ -325,7 +354,7 @@
       '<p class="nota">Toca una columna para ordenar. Pts son 3 por victoria y 1 por empate; PP, los goles en propia puerta. La racha enseña los últimos 5 partidos, el más reciente a la derecha.</p>' +
       (gks.length ? '<h2>Porteros</h2><div class="tablawrap"><table><thead><tr><th scope="col" class="izq">Portero</th><th scope="col">PJ</th><th scope="col">Encajados</th><th scope="col">Por partido</th><th scope="col">A cero</th></tr></thead><tbody>' +
         gks.map(function (r, i) {
-          return '<tr' + (r.id === S.me.pid ? ' class="yo"' : '') + '><th scope="row"><span class="pos">' + (i + 1) + '</span>' + esc(r.name) + '</th><td>' + r.gkpj + '</td><td>' + r.gc + '</td><td class="on">' + num(r.gc / r.gkpj, 2) + '</td><td>' + r.cs + '</td></tr>';
+          return '<tr' + (r.id === S.me.pid ? ' class="yo"' : '') + '><th scope="row"><span class="pos">' + (i + 1) + '</span>' + nm(r.id) + '</th><td>' + r.gkpj + '</td><td>' + r.gc + '</td><td class="on">' + num(r.gc / r.gkpj, 2) + '</td><td>' + r.cs + '</td></tr>';
         }).join('') + '</tbody></table></div><p class="nota">Solo cuentan los partidos jugados de portero, ordenados de menos a más goles encajados por partido.</p>' : '') +
       '</section>';
   }
@@ -340,7 +369,7 @@
       if (x.e.g) bits.push(x.e.g + (x.e.g === 1 ? ' gol' : ' goles'));
       if (x.e.a) bits.push(x.e.a + ' asist.');
       if (x.e.og) bits.push(x.e.og + ' en propia');
-      return '<li>' + esc(nameOf(x.pid)) + (bits.length ? ' <span>' + bits.join(', ') + '</span>' : '') + '</li>';
+      return '<li>' + nm(x.pid) + (bits.length ? ' <span>' + bits.join(', ') + '</span>' : '') + '</li>';
     }).join('') + '</ul>';
   }
   function viewPartidos() {
@@ -389,7 +418,7 @@
           if (p.uid) bits.push('móvil asociado');
           if (p.uid && S.admins[p.uid]) bits.push('administrador');
           if (p.guestOf) bits.push('invitado de ' + nameOf(p.guestOf));
-          return '<div class="jug"><div class="q"><b>' + esc(p.name) + '</b><span>' + (bits.length ? esc(bits.join(', ')) : 'sin móvil asociado') + '</span></div>' +
+          return '<div class="jug"><div class="q"><b>' + nm(p.id) + '</b><span>' + (bits.length ? esc(bits.join(', ')) : 'sin móvil asociado') + '</span></div>' +
             '<button class="btn min" data-act="sheet" data-k="player" data-pid="' + p.id + '" data-fk="g-' + p.id + '">Gestionar</button></div>';
         }).join('') + '</div>' +
         '<form data-form="add-players" class="bloque"><div class="campo"><label for="add-names">Añadir jugadores, uno por línea</label>' +
@@ -465,7 +494,8 @@
       }).join('') + taken.map(function (p) {
         return '<li data-n="' + esc(norm(p.name)) + '"><button disabled title="Ya lo ha elegido otro móvil">' + esc(p.name) + ', cogido</button></li>';
       }).join('') + '</ul>' +
-      '<form class="tarjeta" data-form="new-player"><h3>No estoy en la lista</h3><div class="campo"><label for="nuevo">Tu nombre, como te llaman en el grupo</label>' +
+      '<form class="tarjeta" data-form="new-player"><h3>No estoy en la lista</h3><div class="campo"><label for="nuevo">Tu nombre</label>' +
+      '<p class="nota">Usa el mismo nombre con el que te apuntas en las listas de WhatsApp, para que todos te reconozcan.</p>' +
       '<input type="text" id="nuevo" data-in="newName" maxlength="30" autocomplete="off" value="' + esc(ui.newName) + '"></div><button class="btn pri" type="submit">Entrar con este nombre</button></form>' +
       '<p class="nota">Si tu nombre sale como cogido y no has sido tú, pide a un administrador que lo libere.</p>' +
       '<button class="enlace" data-act="browse" data-fk="mirar" style="align-self:flex-start">Solo quiero mirar</button></section>';
@@ -508,6 +538,8 @@
       var isAdm = !!(p.uid && S.admins[p.uid]);
       body = '<h2>' + esc(p.name) + '</h2><form data-form="rename" class="bloque"><div class="campo"><label for="ren">Nombre</label>' +
         '<input type="text" id="ren" data-in="rename" maxlength="30" autocomplete="off" value="' + esc(ui.rename) + '"></div><button class="btn" type="submit">Guardar nombre</button></form>' +
+        '<form data-form="tag" class="bloque"><div class="campo"><label for="p-tag">Símbolo a la derecha del nombre</label>' +
+        '<input type="text" id="p-tag" data-in="tagInput" maxlength="4" autocomplete="off" placeholder="Por ejemplo ⭐" value="' + esc(ui.tagInput) + '"></div><button class="btn" type="submit">Guardar símbolo</button></form>' +
         '<div class="campo"><label for="p-pos">Posición</label>' + posSelect('p-pos', 'ppos', p.id) + '</div>' +
         '<div class="fila-btn">' +
         (p.uid ? '<button class="btn" data-act="release" data-pid="' + p.id + '" data-fk="lib">Liberar su móvil</button>' : '') +
@@ -586,7 +618,7 @@
     'close-sheet': function () { ui.sheet = null; render(); },
     sheet: function (b) {
       ui.sheet = { k: b.dataset.k, mid: b.dataset.mid, pid: b.dataset.pid };
-      if (b.dataset.k === 'player' && idx[b.dataset.pid]) ui.rename = idx[b.dataset.pid].name;
+      if (b.dataset.k === 'player' && idx[b.dataset.pid]) { ui.rename = idx[b.dataset.pid].name; ui.tagInput = idx[b.dataset.pid].tag || ''; }
       if (b.dataset.k === 'guest') { ui.guestName = ''; ui.guestTeam = 's'; }
       render();
     },
@@ -654,7 +686,7 @@
     },
     pay: function (b) {
       var on = b.dataset.v === '1';
-      run(B.updateEntry(b.dataset.mid, b.dataset.pid, { paid: on }), b.dataset.pid === S.me.pid && on ? 'Apuntado: has pagado.' : null);
+      run(B.updateEntry(b.dataset.mid, b.dataset.pid, { paid: on }), b.dataset.pid === S.me.pid && on ? 'Pagado. 💵' : null);
     },
     close: function (b) {
       var m = match(b.dataset.mid), final = {};
@@ -673,6 +705,7 @@
       run(B.setCaptains(order));
     },
     'cap-del': function (b) { run(B.setCaptains(capOrder().filter(function (pid) { return pid !== b.dataset.pid; }))); },
+    redraw: function (b) { delete drawing[b.dataset.mid]; run(B.updateMatch(b.dataset.mid, { cob: null, drawn: false }), 'Sorteo repetido.'); },
     bootstrap: function () { run(B.bootstrapAdmin(), 'Hecho. Ya eres administrador.'); },
     'release-me': function () { ui.confirm = null; run(B.releasePlayer(S.me.pid)).then(function () { ui.onboarding = true; render(); }); },
     release: function (b) { ui.sheet = null; run(B.releasePlayer(b.dataset.pid), 'Móvil liberado. El nombre vuelve a estar libre.'); },
@@ -703,6 +736,12 @@
       ui.sheet = null;
       run(B.updatePlayer(sh.pid, { name: name }), 'Nombre cambiado.');
     },
+    tag: function () {
+      var sh = ui.sheet;
+      if (!sh) return;
+      ui.sheet = null;
+      run(B.updatePlayer(sh.pid, { tag: ui.tagInput.trim().slice(0, 4) }), ui.tagInput.trim() ? 'Símbolo guardado.' : 'Símbolo quitado.');
+    },
     'add-players': function () {
       var seen = {}, names = ui.addNames.split(/\n|,/).map(function (n) { return n.trim().replace(/\s+/g, ' ').slice(0, 30); }).filter(function (n) {
         var k = norm(n);
@@ -724,7 +763,7 @@
     'open-match': function () {
       var d = ui.newDate || nextMonday();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Pon la fecha del partido.'); return; }
-      run(B.createMatch({ date: d, time: '20:30' }), 'Convocatoria abierta.');
+      run(B.createMatch({ date: d, time: '20:30', drawAt: drawTime({ date: d, time: '20:30' }) }), 'Convocatoria abierta.');
     }
   };
   app.addEventListener('click', function (ev) {
@@ -753,7 +792,7 @@
     } else if (k === 'capadd') {
       if (ev.type === 'change' && el.value && idx[el.value]) run(B.setCaptains(capOrder().concat([el.value])));
     } else if (k === 'cob') {
-      if (ev.type === 'change') run(B.updateMatch(el.dataset.mid, { cob: el.value || null }));
+      if (ev.type === 'change') run(B.updateMatch(el.dataset.mid, { cob: el.value || null, drawn: !el.value ? true : false }));
     } else if (k in ui) {
       ui[k] = el.value;
     }
@@ -773,5 +812,29 @@
       B.updateMatch(m.id, { settled: true }).then(null, function () { delete settling[m.id]; });
     });
   }
-  B.watch(function (s) { S = s; render(); if (!S.loading && !S.error) settle(); });
+  // El sorteo no tiene servidor: lo hace el primer móvil identificado que tenga la app abierta a partir de la hora.
+  // Las reglas solo dejan escribirlo una vez y solo con un jugador de campo de ese partido.
+  var drawing = {}, drawTimer = null;
+  function sorteo() {
+    clearTimeout(drawTimer);
+    if (!S.me.pid) return;
+    var now = Date.now(), next = Infinity;
+    S.matches.forEach(function (m) {
+      if (m.status === 'closed') return;
+      var t = drawTime(m);
+      if (S.me.isAdmin && !m.drawAt && isFinite(t)) { B.updateMatch(m.id, { drawAt: t }).then(null, function () {}); }
+      if (m.cob || m.drawn || drawing[m.id] || !S.entries[m.id]) return;
+      if (now < t) { next = Math.min(next, t); return; }
+      if (!candidates(m).length) return;
+      drawing[m.id] = true;
+      // una espera corta y distinta en cada móvil, para que no escriban todos a la vez
+      setTimeout(function () {
+        var cur = S.matches.filter(function (x) { return x.id === m.id; })[0], pool = cur ? candidates(cur) : [];
+        if (!cur || cur.cob || cur.drawn || cur.status === 'closed' || !pool.length) { delete drawing[m.id]; return; }
+        B.drawCollector(m.id, pool[Math.floor(Math.random() * pool.length)]).then(null, function () { /* otro móvil se ha adelantado, o este no puede */ });
+      }, 300 + Math.random() * 2500);
+    });
+    if (isFinite(next)) drawTimer = setTimeout(function () { render(); sorteo(); }, Math.min(next - now + 500, 2147000000));
+  }
+  B.watch(function (s) { S = s; render(); if (!S.loading && !S.error) { settle(); sorteo(); } });
 })();

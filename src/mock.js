@@ -16,6 +16,7 @@ window.createBackend = function () {
   var N = {};
   seed.players.forEach(function (r) { N[r[0]] = add(r[0], r[1], r[2], r[3]); });
   if (seed.admin) db.admins[seed.admin] = true;
+  Object.keys(seed.tags || {}).forEach(function (n) { if (N[n]) db.players[N[n]].tag = seed.tags[n]; });
   if (seed.captains) db.captains = seed.captains.map(function (n) { return N[n]; }).filter(Boolean);
   if (seed.poll) db.poll = { q: seed.poll.q, options: seed.poll.options, active: true };
   function entry(t, gk, i, g, a, og, paid) { return { t: t, gk: !!gk, at: t0 + i * 60000, g: g || 0, a: a || 0, og: og || 0, paid: !!paid }; }
@@ -106,6 +107,7 @@ window.createBackend = function () {
         if (!p) deny('Ese jugador ya no existe.');
         if (patch.name !== undefined) p.name = String(patch.name).trim().slice(0, 30) || p.name;
         if (patch.aka) p.aka = patch.aka;
+        if (patch.tag !== undefined) p.tag = patch.tag || null;
       });
     },
     // Lo que cada jugador puede cambiar de sí mismo: su posición y su respuesta a la encuesta.
@@ -157,7 +159,7 @@ window.createBackend = function () {
       return op(function () {
         if (!admin()) deny();
         var mid = 'm' + String(data.date).replace(/-/g, '') + id('');
-        db.matches[mid] = { id: mid, date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null };
+        db.matches[mid] = { id: mid, date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null, drawAt: data.drawAt || null, drawn: false };
         db.entries[mid] = {};
         return mid;
       });
@@ -168,6 +170,17 @@ window.createBackend = function () {
         var m = db.matches[mid];
         if (!m) deny('Ese partido ya no existe.');
         Object.keys(patch).forEach(function (k) { m[k] = patch[k]; });
+      });
+    },
+    drawCollector: function (mid, pid) {
+      return op(function () {
+        var m = db.matches[mid], e = m && db.entries[mid][pid];
+        if (!m) deny('Ese partido ya no existe.');
+        if (!admin()) {
+          if (!mine() || m.cob || m.drawn || m.status === 'closed' || !m.drawAt || Date.now() < m.drawAt) deny();
+          if (!e || e.gk || (e.t !== 'a' && e.t !== 'b')) deny();
+        }
+        m.cob = pid; m.drawn = true;
       });
     },
     deleteMatch: function (mid) {

@@ -100,6 +100,17 @@ button.fila:hover .nom{text-decoration:underline;text-underline-offset:3px}
 .tarjeta{background:var(--papel);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .tarjeta h3{font-weight:800;font-stretch:125%;font-size:16px}
 
+/* pagar */
+.pagar{display:flex;align-items:center;gap:14px}
+.pagar p{font-weight:600;min-width:0}
+.pasta{flex:none;width:76px;height:76px;border-radius:50%;border:3px solid #000;background:var(--amarilla);display:grid;place-items:center;font-size:42px;line-height:1;padding:0;box-shadow:0 5px 0 #000}
+.pasta:active{transform:translateY(4px);box-shadow:0 1px 0 #000}
+.cobro .pasta{border-color:var(--grada);box-shadow:0 5px 0 var(--grada)}
+@media (prefers-reduced-motion:no-preference){
+  .pasta span{display:block;animation:baila 1.6s ease-in-out infinite}
+  @keyframes baila{0%,60%,100%{transform:rotate(0)}70%{transform:rotate(-14deg)}80%{transform:rotate(12deg)}90%{transform:rotate(-6deg)}}
+}
+
 /* cobros */
 .cobro{background:var(--tinta);color:var(--grada);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .cobro .t{font-weight:800;font-stretch:125%;font-size:22px;line-height:1.05;letter-spacing:-.01em;overflow-wrap:anywhere}

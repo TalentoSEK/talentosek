@@ -119,6 +119,7 @@ window.createBackend = function () {
       const out = {};
       if (patch.name !== undefined) out.name = String(patch.name).trim().slice(0, 30);
       if (patch.aka) out.aka = patch.aka;
+      if (patch.tag !== undefined) out.tag = patch.tag || null;
       return guard(updateDoc(doc(db, 'players', pid), out));
     },
     setProfile: function (pid, patch) {
@@ -147,9 +148,10 @@ window.createBackend = function () {
     },
     createMatch: function (data) {
       const id = 'm' + String(data.date).replace(/-/g, '') + Math.random().toString(36).slice(2, 7);
-      return guard(setDoc(doc(db, 'matches', id), { date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null, settled: false })).then(function () { return id; });
+      return guard(setDoc(doc(db, 'matches', id), { date: data.date, time: data.time || '20:30', status: 'open', sa: 0, sb: 0, cob: null, final: null, settled: false, drawAt: data.drawAt || null, drawn: false })).then(function () { return id; });
     },
     updateMatch: function (mid, patch) { return guard(updateDoc(doc(db, 'matches', mid), patch)); },
+    drawCollector: function (mid, pid) { return guard(updateDoc(doc(db, 'matches', mid), { cob: pid, drawn: true })); },
     deleteMatch: function (mid) {
       return guard(getDocs(collection(db, 'matches', mid, 'entries')).then(function (snap) {
         const b = writeBatch(db);
