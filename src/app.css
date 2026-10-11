@@ -141,6 +141,8 @@ input[type="text"],input[type="date"],input[type="search"],select,textarea{backg
 textarea{min-height:200px;font-size:14px}
 .lista-nombres{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .lista-nombres button{border:1.5px solid var(--tinta);background:var(--papel);border-radius:10px;padding:10px 12px;min-height:48px;font-weight:700;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lista-nombres.una{grid-template-columns:minmax(0,1fr)}
+.lista-nombres.una button{white-space:normal;overflow:visible}
 .lista-nombres button:disabled{border-color:var(--raya);color:var(--gris);font-weight:400}
 .jug{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-top:1px solid var(--raya)}
 .jug:first-child{border-top:0}

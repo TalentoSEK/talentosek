@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -53,6 +53,7 @@
     side(m, o).forEach(function (x) { n += x.e.og || 0; });
     return n;
   }
+  function poll() { var p = S.poll; return p && p.active && p.q && p.options && p.options.length ? p : null; }
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
   function room(m, t, gk, moving) {
     if (t === 's') return true;
@@ -364,6 +365,7 @@
           ? '<div class="tarjeta"><p class="aviso">Este móvil dejará de ser ' + esc(nameOf(S.me.pid)) + ' y el nombre quedará libre para que lo elija otro.</p><div class="fila-btn"><button class="btn peligro" data-act="release-me" data-fk="relyes">Sí, cambiar</button><button class="btn" data-act="confirm" data-v="" data-fk="relno">Cancelar</button></div></div>'
           : '<button class="enlace" data-act="confirm" data-v="release" data-fk="rel" style="align-self:flex-start">No soy ' + esc(nameOf(S.me.pid)) + '</button>');
     }
+    html += pollCard();
     if (S.me.canBootstrap && S.me.pid) {
       html += '<div class="tarjeta"><h3>Esta app todavía no tiene administrador</h3><p class="nota">El administrador abre las convocatorias, pone el marcador y cierra los partidos. Solo el primero puede nombrarse así; después, los administradores nombran a los demás.</p>' +
         '<button class="btn pri" data-act="bootstrap" data-fk="boot">Hacerme administrador</button></div>';
@@ -379,6 +381,13 @@
           return '<div class="jug"><div class="q"><b>' + esc(p.name) + '</b><span>' + (bits.length ? esc(bits.join(', ')) : 'sin móvil asociado') + '</span></div>' +
             '<button class="btn min" data-act="sheet" data-k="player" data-pid="' + p.id + '" data-fk="g-' + p.id + '">Gestionar</button></div>';
         }).join('') + '</div></div>';
+    }
+    if (S.me.isAdmin) {
+      var pq = ui.pollQ != null ? ui.pollQ : (S.poll && S.poll.q) || '', po = ui.pollOpts != null ? ui.pollOpts : ((S.poll && S.poll.options) || []).join('\n');
+      html += '<form class="tarjeta" data-form="poll"><h3>Encuesta de bienvenida</h3><p class="nota">Se pregunta a cada jugador nuevo al entrar, después de la posición. Para quitarla, deja las respuestas vacías.</p>' +
+        '<div class="campo"><label for="poll-q">Pregunta</label><input type="text" id="poll-q" data-in="pollQ" maxlength="80" autocomplete="off" value="' + esc(pq) + '"></div>' +
+        '<div class="campo"><label for="poll-o">Respuestas, una por línea</label><textarea id="poll-o" data-in="pollOpts" style="min-height:140px;font-size:16px">' + esc(po) + '</textarea></div>' +
+        '<button class="btn" type="submit">Guardar encuesta</button></form>';
     }
     return html + '</section>';
   }
@@ -399,7 +408,28 @@
       }).join('') + '</div>' +
       '<button class="enlace" data-act="pos-back" data-fk="posback" style="align-self:flex-start">' + (ui.pending.mine ? 'Ahora no' : 'Volver a la lista de nombres') + '</button></section>';
   }
+  function viewPoll() {
+    var p = poll();
+    return '<section class="vista"><div class="bloque"><h1 class="cuando">' + esc(p.q) + '</h1>' +
+      '<p class="donde">Una pregunta rápida antes de entrar. Los demás verán cuántos votos lleva cada respuesta, no quién ha votado qué.</p></div>' +
+      '<div class="lista-nombres una">' + p.options.map(function (o, i) {
+        return '<button data-act="pick-poll" data-i="' + i + '" data-fk="poll-' + i + '">' + esc(o) + '</button>';
+      }).join('') + '</div>' +
+      '<button class="enlace" data-act="pick-poll" data-i="-1" data-fk="poll-no" style="align-self:flex-start">Prefiero no contestar</button></section>';
+  }
+  function pollCard() {
+    var p = poll();
+    if (!p) return '';
+    var mine = idx[S.me.pid] ? idx[S.me.pid].poll : null, counts = p.options.map(function (o) {
+      return { o: o, n: S.players.filter(function (x) { return x.poll === o; }).length };
+    }).sort(function (a, b) { return b.n - a.n; });
+    return '<div class="tarjeta"><h3>' + esc(p.q) + '</h3>' +
+      (S.me.pid ? '<div class="campo" style="max-width:280px"><label for="mi-voto">Tu respuesta</label><select id="mi-voto" data-in="mypoll" data-pid="' + S.me.pid + '"><option value="">Sin contestar</option>' +
+        p.options.map(function (o, i) { return '<option value="' + i + '"' + (mine === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></div>' : '') +
+      '<div>' + counts.map(function (c) { return '<div class="paso"><span>' + esc(c.o) + '</span><output>' + c.n + '</output></div>'; }).join('') + '</div></div>';
+  }
   function viewOnboarding() {
+    if (ui.pending && ui.pending.pos && poll()) return viewPoll();
     if (ui.pending) return viewPosition();
     var free = S.players.filter(function (p) { return !p.uid; }).sort(byName), taken = S.players.filter(function (p) { return !!p.uid; }).sort(byName);
     return '<section class="vista"><div class="bloque"><h1 class="cuando">¿Quién eres?</h1>' +
@@ -500,6 +530,27 @@
     side(m, 's').forEach(function (x) { out.push(nameOf(x.pid)); });
     return out.join('\n');
   }
+  function enter(pend, pos, answer) {
+    // Primero el nombre y después la posición: si la posición no se puede guardar, la entrada sigue valiendo.
+    var who = pend.mine ? Promise.resolve(pend.pid)
+      : pend.pid ? B.claimPlayer(pend.pid).then(function () { return pend.pid; })
+      : B.createPlayer({ name: pend.name, self: true });
+    who.then(function (pid) {
+      var patch = { pos: pos };
+      if (answer !== undefined) patch.poll = answer;
+      return B.setProfile(pid, patch).then(function () { return [pid, true]; }, function () { return [pid, false]; });
+    }).then(function (r) {
+      ui.pending = null; ui.onboarding = false; ui.newName = '';
+      if (!pend.mine) ui.tab = 'partido';
+      toast(!r[1] ? 'Has entrado como ' + nameOf(r[0]) + ', pero la posición no se ha guardado. Elígela más tarde en la pestaña Yo.'
+        : pend.mine ? 'Posición guardada: ' + POS[pos].toLowerCase() + '.' : 'Hecho. Este móvil es ' + nameOf(r[0]) + ', ' + POS[pos].toLowerCase() + '.');
+      render();
+    }, function (e) {
+      ui.pending = null;
+      toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.');
+      render();
+    });
+  }
   var act = {
     tab: function (b) { ui.tab = b.dataset.t; ui.onboarding = false; ui.pending = null; ui.confirm = null; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
     sort: function (b) { ui.sort = b.dataset.k; render(); },
@@ -520,23 +571,13 @@
     'pick-pos': function (b) {
       var pend = ui.pending, pos = b.dataset.v;
       if (!pend || !POS[pos]) return;
-      // Primero el nombre y después la posición: si la posición no se puede guardar, la entrada sigue valiendo.
-      var who = pend.mine ? Promise.resolve(pend.pid)
-        : pend.pid ? B.claimPlayer(pend.pid).then(function () { return pend.pid; })
-        : B.createPlayer({ name: pend.name, self: true });
-      who.then(function (pid) {
-        return B.setPosition(pid, pos).then(function () { return [pid, true]; }, function () { return [pid, false]; });
-      }).then(function (r) {
-        ui.pending = null; ui.onboarding = false; ui.newName = '';
-        if (!pend.mine) ui.tab = 'partido';
-        toast(!r[1] ? 'Has entrado como ' + nameOf(r[0]) + ', pero la posición no se ha guardado. Elígela más tarde en la pestaña Yo.'
-          : pend.mine ? 'Posición guardada: ' + POS[pos].toLowerCase() + '.' : 'Hecho. Este móvil es ' + nameOf(r[0]) + ', ' + POS[pos].toLowerCase() + '.');
-        render();
-      }, function (e) {
-        ui.pending = null;
-        toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.');
-        render();
-      });
+      if (!pend.mine && poll()) { pend.pos = pos; render(); try { window.scrollTo(0, 0); } catch (e) {} return; }
+      enter(pend, pos, undefined);
+    },
+    'pick-poll': function (b) {
+      var pend = ui.pending, p = poll(), i = +b.dataset.i;
+      if (!pend || !pend.pos) return;
+      enter(pend, pend.pos, p && i >= 0 && p.options[i] ? p.options[i] : null);
     },
     join: function (b) {
       var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1', pid = S.me.pid;
@@ -629,6 +670,13 @@
       ui.sheet = null;
       run(B.updatePlayer(sh.pid, { name: name }), 'Nombre cambiado.');
     },
+    poll: function () {
+      var q = (ui.pollQ != null ? ui.pollQ : (S.poll && S.poll.q) || '').trim().slice(0, 80), seen = {};
+      var opts = (ui.pollOpts != null ? ui.pollOpts : ((S.poll && S.poll.options) || []).join('\n')).split('\n').map(function (o) { return o.trim().slice(0, 40); })
+        .filter(function (o) { if (!o || seen[o]) return false; seen[o] = true; return true; }).slice(0, 12);
+      if (opts.length && !q) { toast('Escribe la pregunta.'); return; }
+      run(B.setPoll({ q: q, options: opts, active: opts.length > 0 }), opts.length ? 'Encuesta guardada.' : 'Encuesta quitada.').then(function () { ui.pollQ = null; ui.pollOpts = null; render(); });
+    },
     'open-match': function () {
       var d = ui.newDate || nextMonday();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Pon la fecha del partido.'); return; }
@@ -654,7 +702,10 @@
     } else if (k === 'persona') {
       if (ev.type === 'change') { ui.onboarding = false; ui.pending = null; ui.sheet = null; ui.confirm = null; B.switchUser(el.value); }
     } else if (k === 'mypos' || k === 'ppos') {
-      if (ev.type === 'change' && (!el.value || POS[el.value])) run(B.setPosition(el.dataset.pid, el.value || null), 'Posición guardada.');
+      if (ev.type === 'change' && (!el.value || POS[el.value])) run(B.setProfile(el.dataset.pid, { pos: el.value || null }), 'Posición guardada.');
+    } else if (k === 'mypoll') {
+      var pp = poll();
+      if (ev.type === 'change' && pp) run(B.setProfile(el.dataset.pid, { poll: el.value === '' ? null : pp.options[+el.value] || null }), 'Respuesta guardada.');
     } else if (k === 'cob') {
       if (ev.type === 'change') run(B.updateMatch(el.dataset.mid, { cob: el.value || null }));
     } else if (k in ui) {

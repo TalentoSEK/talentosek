@@ -15,6 +15,7 @@ await p.click('[data-act=identify]'); await p.fill('#nuevo','Leo'); await p.clic
 console.log('quien:', await p.textContent('.quien'));
 await p.click('[data-fk="tab-yo"]'); console.log('yo:', (await txt('.vista')).slice(0,160));
 await p.click('[data-act=bootstrap]'); await p.waitForTimeout(150); console.log('admin:', /Eres administrador/.test(await txt('.vista')), '| puede repetir:', !!(await p.$('[data-act=bootstrap]')));
+await p.fill('#poll-q','¿Quién llega tarde?'); await p.fill('#poll-o','Toni\nWilly\nToni'); await p.click('[data-form=poll] button'); await p.waitForTimeout(200); await p.selectOption('#mi-voto',{label:'Willy'}); await p.waitForTimeout(200); console.log('encuesta:', (await txt('.tarjeta:has(#mi-voto)')).slice(0,120));
 await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-12'); await p.click('[data-form=open-match] button'); await p.waitForTimeout(200);
 console.log('convocatoria:', await txt('.cuando'), '|', await txt('.estado'));
 await p.click('.libre[data-t=b][data-gk="0"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));

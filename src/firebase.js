@@ -6,7 +6,7 @@ import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc, updateDo
 
 window.createBackend = function () {
   const app = initializeApp(window.TS_FIREBASE), auth = getAuth(app), db = getFirestore(app);
-  const st = { uid: null, players: null, admins: null, matches: null, claimed: null, entries: {} };
+  const st = { uid: null, players: null, admins: null, matches: null, claimed: null, poll: null, entries: {} };
   const subs = {};                 // partido -> función para dejar de escuchar sus apuntados
   let cb = null, error = null, booted = false, started = false;
 
@@ -31,7 +31,7 @@ window.createBackend = function () {
       if (!booted) { cb({ loading: true, me: me, players: [], admins: {}, matches: [], entries: {} }); return; }
     }
     me.pid = myPid(); me.isAdmin = isAdmin(); me.canBootstrap = st.claimed === false;
-    cb({ me: me, players: Object.values(st.players), admins: st.admins, matches: Object.values(st.matches), entries: st.entries });
+    cb({ me: me, players: Object.values(st.players), admins: st.admins, matches: Object.values(st.matches), entries: st.entries, poll: st.poll });
   }
   function fail(e) {
     console.error('TalentoSEK', e);
@@ -68,6 +68,8 @@ window.createBackend = function () {
     };
     all('players', true); all('matches', true); all('admins', false);
     onSnapshot(doc(db, 'meta', 'claimed'), function (d) { st.claimed = d.exists(); emit(); }, fail);
+    // La encuesta es opcional: si no se puede leer, la app sigue funcionando sin ella.
+    onSnapshot(doc(db, 'meta', 'poll'), function (d) { st.poll = d.exists() ? d.data() : null; emit(); }, function () { st.poll = null; });
   }
   onAuthStateChanged(auth, function (user) {
     if (!user) { signInAnonymously(auth).catch(fail); return; }
@@ -118,7 +120,13 @@ window.createBackend = function () {
       if (patch.aka) out.aka = patch.aka;
       return guard(updateDoc(doc(db, 'players', pid), out));
     },
-    setPosition: function (pid, pos) { return guard(updateDoc(doc(db, 'players', pid), { pos: pos || null })); },
+    setProfile: function (pid, patch) {
+      const out = {};
+      if ('pos' in patch) out.pos = patch.pos || null;
+      if ('poll' in patch) out.poll = patch.poll || null;
+      return guard(updateDoc(doc(db, 'players', pid), out));
+    },
+    setPoll: function (data) { return guard(setDoc(doc(db, 'meta', 'poll'), { q: data.q, options: data.options, active: !!data.active })); },
     deletePlayer: function (pid) {
       const p = st.players[pid];
       if (!p) return Promise.resolve();

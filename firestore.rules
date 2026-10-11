@@ -17,11 +17,18 @@ service cloud.firestore {
     function changedOnly(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     function validName(n) { return n is string && n.size() > 0 && n.size() <= 30; }
     function validPos(p) { return p == null || p in ['por', 'def', 'med', 'ext', 'del']; }
+    function validPoll(p) { return p == null || (p is string && p.size() <= 60); }
 
     // Marca de que la app ya tiene su primer administrador.
     match /meta/claimed {
       allow read: if signedIn();
       allow create: if signedIn() && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Encuesta de bienvenida: la definen los administradores.
+    match /meta/poll {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /admins/{uid} {
@@ -62,8 +69,9 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.pid == pid)
         // soltar el propio
         || (signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == null && changedOnly(['uid']))
-        // decir de qué juega uno mismo
-        || (signedIn() && resource.data.uid == request.auth.uid && changedOnly(['pos']) && validPos(request.resource.data.pos));
+        // cambiar lo suyo: su posición y su respuesta a la encuesta
+        || (signedIn() && resource.data.uid == request.auth.uid && changedOnly(['pos', 'poll'])
+            && validPos(request.resource.data.get('pos', null)) && validPoll(request.resource.data.get('poll', null)));
       // un invitado que aún no ha entrado lo puede borrar quien lo trajo
       allow delete: if isAdmin() || (hasPlayer() && resource.data.guestOf == myPid() && resource.data.uid == null);
     }
