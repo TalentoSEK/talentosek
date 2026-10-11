@@ -975,6 +975,8 @@ window.createBackend = function () {
         '<div class="campo"><label for="inv-t">¿Dónde lo apuntas?</label><select id="inv-t" data-in="guestTeam">' + ['s', 'a', 'b'].map(function (t) {
           return '<option value="' + t + '"' + (ui.guestTeam === t ? ' selected' : '') + '>' + TEAM[t] + '</option>';
         }).join('') + '</select></div><button class="btn pri" type="submit">Apuntar invitado</button></form>';
+    } else if (sh.k === 'msg') {
+      body = '<h2>' + esc(sh.title) + '</h2><p>' + esc(sh.text) + '</p>';
     } else if (sh.k === 'wa') {
       body = '<h2>Lista para WhatsApp</h2><p class="nota">No se ha podido copiar sola. Mantén pulsado el texto para copiarlo.</p><textarea readonly id="wa-text">' + esc(sh.text) + '</textarea>';
     } else if (sh.k === 'player') {
@@ -1161,7 +1163,10 @@ window.createBackend = function () {
     'new-player': function () {
       var name = ui.newName.trim().replace(/\s+/g, ' ');
       if (!name) { toast('Escribe tu nombre.'); return; }
-      if (S.players.some(function (p) { return norm(p.name) === norm(name); })) { toast('Ya hay un ' + name + ' en la lista. Elígelo arriba o añade un apellido.'); return; }
+      if (S.players.some(function (p) { return norm(p.name) === norm(name); })) {
+        ui.sheet = { k: 'msg', title: '¿Eres tonto o qué?', text: 'El nombre ' + name + ' ya está ocupado. Si eres tú, elígelo en la lista de arriba. Si eres otro, añade un apellido para distinguirte.' };
+        render(); return;
+      }
       ui.pending = { name: name }; render(); try { window.scrollTo(0, 0); } catch (e) {}
     },
     guest: function () {
