@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, openM: {}, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, openM: {}, importText: '', importNote: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -350,6 +350,41 @@
       }).join('') + '</ul>' : '<p class="nota">Nadie todavía.</p>') +
       (m.status === 'open' && S.me.pid && !meIn ? '<button class="enlace" data-act="join" data-mid="' + m.id + '" data-t="s" data-gk="0" data-fk="join-s">Apuntarme de suplente</button>' : '') + '</div>';
   }
+  /* ---------- cargar la lista de WhatsApp (administradores) ---------- */
+  var HIDDEN = /[​-‏⁠-⁯﻿]/g;
+  function cleanName(s) {
+    var n = String(s).replace(HIDDEN, '').replace(/<[^>]*>/g, '').replace(/[^\p{L}\p{N} .'"-]/gu, '').replace(/\s+/g, ' ').replace(/^[ .-]+|[ .-]+$/g, '');
+    return n ? (n.charAt(0).toUpperCase() + n.slice(1)).slice(0, 30) : '';
+  }
+  function parseList(text) {
+    var sec = null, out = { a: [], b: [], s: [] };
+    String(text).split(/\r?\n/).forEach(function (line) {
+      var l = line.replace(HIDDEN, '').trim(), bare = norm(l);
+      if (/^blancos?\b/.test(bare) && bare.length < 20) { sec = 'a'; return; }
+      if (/^negros?\b/.test(bare) && bare.length < 20) { sec = 'b'; return; }
+      if (/^suplente/.test(bare)) { sec = 's'; return; }
+      if (!sec) return;
+      var m = l.match(/^(\d{1,2})\s*[.):-]*\s*(.*)$/), name = cleanName(m ? m[2] : (sec === 's' ? l : ''));
+      if (!name) return;
+      if (sec === 's') out.s.push(name); else out[sec].push([m ? +m[1] : 0, name]);
+    });
+    return out;
+  }
+  function findPlayer(name, pool) {
+    var n = norm(name);
+    for (var i = 0; i < pool.length; i++) {
+      if (norm(pool[i].name) === n) return pool[i];
+      if ((pool[i].aka || []).some(function (a) { return norm(a) === n; })) return pool[i];
+    }
+    return null;
+  }
+  function importBox(m) {
+    return '<form class="tarjeta" data-form="import" data-mid="' + m.id + '"><h3>Cargar la lista de WhatsApp</h3>' +
+      '<p class="nota">Pega la convocatoria del grupo. Cada uno queda en su equipo con su dorsal; quien no exista en la app se crea y su nombre queda libre para que lo elija al entrar. Quien esté apuntado aquí y no salga en la lista pasa a suplentes.</p>' +
+      (ui.importNote ? '<p class="aviso">' + esc(ui.importNote) + '</p>' : '') +
+      '<div class="campo"><label for="imp-' + m.id + '">Lista</label><textarea id="imp-' + m.id + '" data-in="importText" placeholder="Negros&#10;1. …&#10;&#10;Blancos&#10;1. …">' + esc(ui.importText) + '</textarea></div>' +
+      '<button class="btn" type="submit">Cargar lista</button></form>';
+  }
   function convocatoria(m) {
     var n = side(m, 'a').length + side(m, 'b').length;
     return '<section class="vista" aria-label="Convocatoria"><div class="bloque"><h1 class="cuando">' + esc(largo(m.date)) + '</h1>' +
@@ -360,6 +395,7 @@
       '<div class="fila-btn">' + (S.me.pid ? '<button class="btn" data-act="sheet" data-k="guest" data-mid="' + m.id + '" data-fk="inv">Traer a un invitado</button>' : '') +
       '<button class="btn" data-act="copy" data-mid="' + m.id + '" data-fk="copy">Copiar lista para WhatsApp</button></div>' +
       campo(m) +
+      (S.me.isAdmin ? importBox(m) : '') +
       (S.me.isAdmin ? '<div class="tarjeta"><h3>Administrar</h3><p class="nota">Toca cualquier nombre para moverlo o quitarlo. Cuando acabe el partido, pásalo a resultado para que cada uno apunte lo suyo.</p>' +
         '<div class="fila-btn"><button class="btn osc" data-act="status" data-mid="' + m.id + '" data-v="review" data-fk="jugado">Ya se ha jugado</button>' +
         (ui.confirm === 'del-' + m.id
@@ -1081,6 +1117,44 @@
       ui.sheet = null;
       run(B.updatePlayer(sh.pid, { tag: ui.tagInput.trim().slice(0, 4) }), ui.tagInput.trim() ? 'Símbolo guardado.' : 'Símbolo quitado.');
     },
+    'import': function (f) {
+      var m = match(f && f.dataset.mid), res = parseList(ui.importText || ''), items = [];
+      if (!m || !S.me.isAdmin) return;
+      ['a', 'b'].forEach(function (t) { res[t].forEach(function (r) { items.push({ t: t, n: r[0] >= 1 && r[0] <= CAP ? r[0] : null, name: r[1] }); }); });
+      res.s.forEach(function (name) { items.push({ t: 's', n: null, name: name }); });
+      if (!items.length) { toast('No encuentro los equipos en ese texto. Tiene que llevar las líneas Blancos y Negros con los nombres numerados.'); return; }
+      var news = [], seen = {};
+      items.forEach(function (it) {
+        var p = findPlayer(it.name, S.players);
+        if (p) { it.pid = p.id; return; }
+        var k = norm(it.name);
+        if (!seen[k]) { seen[k] = { name: it.name }; news.push(seen[k]); }
+        it.nw = seen[k];
+      });
+      toast('Cargando la lista…');
+      Promise.all(news.map(function (x) { return B.createPlayer({ name: x.name }).then(function (id) { x.pid = id; }); })).then(function () {
+        var es = ents(m.id), listed = {}, ops = [], moved = [], cnt = { a: 0, b: 0, s: 0 };
+        items.forEach(function (it) {
+          var pid = it.pid || (it.nw && it.nw.pid);
+          if (!pid || listed[pid]) return;
+          listed[pid] = true; cnt[it.t]++;
+          var data = { t: it.t, gk: it.t !== 's' && it.n === 1, n: it.t === 's' ? null : it.n };
+          ops.push(es[pid] ? B.updateEntry(m.id, pid, data) : B.setEntry(m.id, pid, Object.assign({ at: Date.now() + ops.length }, data)));
+        });
+        Object.keys(es).forEach(function (pid) {
+          if (listed[pid] || es[pid].t === 's') return;
+          moved.push(nameOf(pid));
+          ops.push(B.updateEntry(m.id, pid, { t: 's', gk: false, n: null }));
+        });
+        return Promise.all(ops).then(function () {
+          ui.importText = '';
+          ui.importNote = 'Lista cargada: ' + cnt.a + ' en Blancos, ' + cnt.b + ' en Negros' + (cnt.s ? ' y ' + cnt.s + ' suplentes' : '') + '.' +
+            (news.length ? ' Nuevos en la app: ' + lista(news.map(function (x) { return x.name; })) + '.' : '') +
+            (moved.length ? ' Pasan a suplentes por no salir en la lista: ' + lista(moved) + '.' : '');
+          toast('Lista cargada.'); render();
+        });
+      }).then(null, function (e) { toast(e && e.code === 'denied' ? e.message : 'No se ha podido cargar entera. Revisa la pizarra y vuelve a intentarlo.'); render(); });
+    },
     'add-players': function () {
       var seen = {}, names = ui.addNames.split(/\n|,/).map(function (n) { return n.trim().replace(/\s+/g, ' ').slice(0, 30); }).filter(function (n) {
         var k = norm(n);
@@ -1113,7 +1187,7 @@
   app.addEventListener('submit', function (ev) {
     ev.preventDefault();
     var f = ev.target.closest('[data-form]');
-    if (f && forms[f.dataset.form]) forms[f.dataset.form]();
+    if (f && forms[f.dataset.form]) forms[f.dataset.form](f);
   });
   function onInput(ev) {
     var el = ev.target, k = el && el.dataset ? el.dataset['in'] : null;
