@@ -2,6 +2,7 @@
 window.TS_SEED = {
   note: 'Los jugadores y los resultados son inventados.',
   admin: 'u-admin',
+  field: { iban: 'ES0000000000000000000000', name: 'Club Deportivo de Ejemplo', concept: 'Fútbol 11', amount: '100' },
   tags: { 'Omar': '⭐' },
   captains: ['Willy', 'Leo', 'Manu', 'Omar'],
   poll: { q: '¿Quién llega siempre tarde?', options: ['Bruno', 'Manu', 'Toni', 'Willy'] },

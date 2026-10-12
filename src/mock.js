@@ -2,7 +2,8 @@
    los permisos de aquí son los mismos que tendrán las reglas de seguridad. */
 window.createBackend = function () {
   'use strict';
-  var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {}, poll: null, captains: [] };
+  var seed0 = window.TS_SEED || {};
+  var db = { players: {}, users: {}, admins: {}, matches: {}, entries: {}, poll: null, captains: [], field: seed0.field || null, cover: seed0.cover || null };
   var seq = 0, t0 = Date.now() - 3 * 86400000;
   function id(p) { seq++; return p + seq.toString(36) + Math.random().toString(36).slice(2, 6); }
   function add(name, aka, uid, pos) {
@@ -43,6 +44,8 @@ window.createBackend = function () {
       admins: db.admins,
       poll: db.poll,
       captains: db.captains,
+      field: db.field,
+      cover: db.cover,
       matches: Object.keys(db.matches).map(function (k) { return db.matches[k]; }),
       entries: db.entries
     });
@@ -118,6 +121,18 @@ window.createBackend = function () {
         if (!admin() && pid !== mine()) deny();
         if ('pos' in patch) p.pos = patch.pos || null;
         if ('poll' in patch) p.poll = patch.poll || null;
+      });
+    },
+    setCover: function (data) {
+      return op(function () {
+        if (!admin()) deny();
+        db.cover = data || null;
+      });
+    },
+    setField: function (data) {
+      return op(function () {
+        if (!admin()) deny();
+        db.field = data;
       });
     },
     setCaptains: function (order) {

@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -83,6 +83,20 @@
     var recent = sorted().filter(function (o) { return o.date < m.date && o.cob; }).slice(-SKIP).map(function (o) { return o.cob; });
     var fresh = field.filter(function (pid) { return recent.indexOf(pid) < 0; });
     return fresh.length ? fresh : field;   // si todos han cobrado hace poco, entran todos
+  }
+  // Datos para pagar el campo (cuenta, beneficiario, concepto e importe). Los guardan los administradores.
+  function field() { var f = S.field; return f && f.iban ? f : null; }
+  function iban4(s) { return String(s).replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim(); }
+  function fieldBtn(m) {
+    return field() ? '<button class="enlace" data-act="sheet" data-k="field" data-mid="' + (m ? m.id : '') + '" data-fk="campo-' + (m ? m.id : 'yo') + '" style="align-self:flex-start">Datos para pagar el campo</button>' : '';
+  }
+  function concepto(m) {
+    var f = field(), d = m ? new Date(m.date + 'T12:00:00') : null, when = '';
+    if (d && !isNaN(d)) {
+      var dd = d.getDate(), mm = d.getMonth() + 1;
+      when = ', ' + fmt(m.date, { weekday: 'long' }).toLowerCase() + ' ' + (dd < 10 ? '0' : '') + dd + '/' + (mm < 10 ? '0' : '') + mm + '/' + d.getFullYear();
+    }
+    return (f.concept || 'Fútbol 11') + when;
   }
   function poll() { var p = S.poll; return p && p.active && p.q && p.options && p.options.length ? p : null; }
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
@@ -209,7 +223,7 @@
       var meOwes = d.unpaid.indexOf(S.me.pid) >= 0;
       return '<section class="cobro" aria-label="Pagos"><p class="t">Cobra ' + esc(nameOf(m.cob)) + '</p>' +
         '<p>' + FEE + ' € por Bizum del partido del ' + esc(largo(m.date).toLowerCase()) + '. ' +
-        (d.unpaid.length ? 'Faltan por pagar ' + d.unpaid.length + ' (' + (d.unpaid.length * FEE) + ' €).' : 'Han pagado todos.') + '</p>' +
+        (d.unpaid.length ? 'Faltan por pagar ' + d.unpaid.length + ' (' + (d.unpaid.length * FEE) + ' €).' : 'Han pagado todos.') + '</p>' + fieldBtn(m) +
         (d.unpaid.length ? '<ul>' + d.unpaid.map(function (pid) {
           return (S.me.isAdmin || m.cob === S.me.pid)
             ? '<li><button class="ficha" data-act="pay" data-mid="' + m.id + '" data-pid="' + pid + '" data-v="1" data-fk="pay-' + m.id + pid + '" aria-label="Marcar que ' + esc(nameOf(pid)) + ' ha pagado">' + esc(nameOf(pid)) + '</button></li>'
@@ -338,7 +352,7 @@
       '<span aria-hidden="true">🤑</span></button><p>Toca la cara cuando hayas pagado tus ' + FEE + ' €.</p></div>';
   }
   function sorteoLine(m) {
-    if (m.cob) return '<div class="estado"><p>Cobra ' + esc(nameOf(m.cob)) + '.' + (m.drawn ? ' Le ha tocado en el sorteo.' : '') + '</p></div>';
+    if (m.cob) return '<div class="estado"><p>Cobra ' + esc(nameOf(m.cob)) + '.' + (m.drawn ? ' Le ha tocado en el sorteo.' : '') + '</p>' + fieldBtn(m) + '</div>';
     var t = drawTime(m);
     return '<p class="nota">' + (Date.now() < t ? 'A las ' + hhmm(t) + ' se sortea quién cobra.' : 'El sorteo de quién cobra se hace en cuanto haya jugadores apuntados.') +
       ' No entran los porteros ni quien haya cobrado en los últimos ' + SKIP + ' partidos.</p>';
@@ -371,7 +385,8 @@
         (!mineUnpaid && marked.length ? '<button class="btn pri" data-act="pay-others" data-mid="' + m.id + '" data-fk="payothers">Pagar por ' + lista(marked.map(nameOf)) + '</button>' : '');
     }
     if (S.me.isAdmin) sel += '<button class="btn min" data-act="redraw" data-mid="' + m.id + '" data-fk="redraw" style="align-self:flex-start">Repetir el sorteo</button>';
-    return '<div class="tarjeta"><h3>Pagos</h3>' + who + sel +
+    if (m.cob && m.cob === S.me.pid) who = '<p class="aviso">Te ha tocado cobrar. Recoge los ' + FEE + ' € de cada uno y paga el campo.</p>';
+    return '<div class="tarjeta"><h3>Pagos</h3>' + who + fieldBtn(m) + sel +
       pago + '<h3>Quién ha pagado</h3>' +
       '<ul class="sup" style="padding:0;background:none;flex-direction:row;flex-wrap:wrap;gap:6px">' + chips + '</ul>' +
       '<p class="nota">Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '. Los porteros no pagan.</p></div>';
@@ -489,6 +504,11 @@
           ? '<div class="tarjeta"><p class="aviso">Este móvil dejará de ser ' + esc(nameOf(S.me.pid)) + ' y el nombre quedará libre para que lo elija otro.</p><div class="fila-btn"><button class="btn peligro" data-act="release-me" data-fk="relyes">Sí, cambiar</button><button class="btn" data-act="confirm" data-v="" data-fk="relno">Cancelar</button></div></div>'
           : '<button class="enlace" data-act="confirm" data-v="release" data-fk="rel" style="align-self:flex-start">No soy ' + esc(nameOf(S.me.pid)) + '</button>');
     }
+    html += portada();
+    if (field()) {
+      var cur = sorted().filter(function (m) { return m.status !== 'closed'; })[0] || sorted().slice(-1)[0];
+      html += '<div class="tarjeta"><h3>Pago del campo</h3><p class="nota">La cuenta, el beneficiario y el concepto para pagar el alquiler.</p>' + fieldBtn(cur || null) + '</div>';
+    }
     html += pollCard();
     if (S.me.canBootstrap && S.me.pid) {
       html += '<div class="tarjeta"><h3>Esta app todavía no tiene administrador</h3><p class="nota">El administrador abre las convocatorias, pone el marcador y cierra los partidos. Solo el primero puede nombrarse así; después, los administradores nombran a los demás.</p>' +
@@ -521,6 +541,16 @@
           rest.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div>' : '') + '</div>';
     }
     if (S.me.isAdmin) {
+      var ff = ui.fld || { iban: (S.field && S.field.iban) || '', name: (S.field && S.field.name) || '', concept: (S.field && S.field.concept) || '', amount: (S.field && S.field.amount) || '' };
+      var fin = function (k, label, extra) {
+        return '<div class="campo"><label for="fld-' + k + '">' + label + '</label><input type="text" id="fld-' + k + '" data-in="fld" data-k="' + k + '" autocomplete="off" value="' + esc(ff[k]) + '"' + (extra || '') + '></div>';
+      };
+      html += '<form class="tarjeta" data-form="field"><h3>Datos para pagar el campo</h3><p class="nota">Los verá cualquiera que abra la app, junto a quién cobra y en esta pestaña. La fecha del partido se añade sola al concepto.</p>' +
+        fin('iban', 'Cuenta (IBAN)', ' maxlength="40"') + fin('name', 'Beneficiario', ' maxlength="60"') + fin('concept', 'Concepto', ' maxlength="60" placeholder="Fútbol 11"') + fin('amount', 'Importe en euros', ' maxlength="6" inputmode="numeric"') +
+        '<button class="btn" type="submit">Guardar datos del campo</button></form>';
+      html += '<div class="tarjeta"><h3>Foto de portada</h3><p class="nota">Sale en la pantalla de bienvenida y en esta pestaña. La app la reduce antes de guardarla.</p>' +
+        '<div class="campo"><label for="cover-file">Elegir una foto</label><input type="file" id="cover-file" data-in="cover" accept="image/*"></div>' +
+        (S.cover ? '<button class="btn min peligro" data-act="cover-del" data-fk="coverdel" style="align-self:flex-start">Quitar la foto</button>' : '') + '</div>';
       var pq = ui.pollQ != null ? ui.pollQ : (S.poll && S.poll.q) || '', po = ui.pollOpts != null ? ui.pollOpts : ((S.poll && S.poll.options) || []).join('\n');
       html += '<form class="tarjeta" data-form="poll"><h3>Encuesta de bienvenida</h3><p class="nota">Se pregunta a cada jugador nuevo al entrar, después de la posición. Para quitarla, deja las respuestas vacías.</p>' +
         '<div class="campo"><label for="poll-q">Pregunta</label><input type="text" id="poll-q" data-in="pollQ" maxlength="80" autocomplete="off" value="' + esc(pq) + '"></div>' +
@@ -566,11 +596,12 @@
         p.options.map(function (o, i) { return '<option value="' + i + '"' + (mine === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></div>' : '') +
       '<div>' + counts.map(function (c) { return '<div class="paso"><span>' + esc(c.o) + '</span><output>' + c.n + '</output></div>'; }).join('') + '</div></div>';
   }
+  function portada() { return S.cover ? '<img class="portada" src="' + esc(S.cover) + '" alt="Foto del grupo">' : ''; }
   function viewOnboarding() {
     if (ui.pending && ui.pending.pos && poll()) return viewPoll();
     if (ui.pending) return viewPosition();
     var free = S.players.filter(function (p) { return !p.uid; }).sort(byName), taken = S.players.filter(function (p) { return !!p.uid; }).sort(byName);
-    return '<section class="vista"><div class="bloque"><h1 class="cuando">¿Quién eres?</h1>' +
+    return '<section class="vista">' + portada() + '<div class="bloque"><h1 class="cuando">¿Quién eres?</h1>' +
       '<p class="donde">Elige tu nombre. Este móvil quedará asociado a él y solo tú podrás apuntarte o borrarte.</p></div>' +
       '<div class="campo"><label for="buscar">Buscar</label><input type="search" id="buscar" data-in="q" autocomplete="off" placeholder="Empieza a escribir tu nombre"></div>' +
       '<ul class="lista-nombres" id="nombres">' + free.map(function (p) {
@@ -614,6 +645,15 @@
         '<div class="campo"><label for="inv-t">¿Dónde lo apuntas?</label><select id="inv-t" data-in="guestTeam">' + ['s', 'a', 'b'].map(function (t) {
           return '<option value="' + t + '"' + (ui.guestTeam === t ? ' selected' : '') + '>' + TEAM[t] + '</option>';
         }).join('') + '</select></div><button class="btn pri" type="submit">Apuntar invitado</button></form>';
+    } else if (sh.k === 'field') {
+      var f = field(), fm = sh.mid ? S.matches.filter(function (x) { return x.id === sh.mid; })[0] : null;
+      if (!f) { ui.sheet = null; return ''; }
+      var row = function (label, value, key) {
+        return '<div class="dato"><div><p class="nota">' + label + '</p><p class="valor">' + esc(value) + '</p></div>' +
+          '<button class="btn min" data-act="copy-text" data-v="' + esc(value) + '" data-fk="cp-' + key + '">Copiar</button></div>';
+      };
+      body = '<h2>Pago del campo</h2>' + (f.amount ? '<p class="aviso">Son ' + esc(f.amount) + ' € por partido.</p>' : '') +
+        row('Cuenta', iban4(f.iban), 'iban') + (f.name ? row('Beneficiario', f.name, 'name') : '') + row('Concepto', concepto(fm), 'con');
     } else if (sh.k === 'msg') {
       body = '<h2>' + esc(sh.title) + '</h2><p>' + esc(sh.text) + '</p>';
     } else if (sh.k === 'wa') {
@@ -694,6 +734,21 @@
       toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.');
       render();
     });
+  }
+  // Reduce la foto en el propio móvil (lado mayor de 900 px, JPEG) para que quepa de sobra en la base de datos.
+  function uploadCover(file) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var k = Math.min(1, 900 / Math.max(img.width, img.height)), c = document.createElement('canvas'), q = 0.82, data;
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      do { data = c.toDataURL('image/jpeg', q); q -= 0.12; } while (data.length > 600000 && q > 0.3);
+      URL.revokeObjectURL(url);
+      if (data.length > 900000) { toast('Esa foto pesa demasiado incluso reducida. Prueba con otra.'); return; }
+      run(B.setCover(data), 'Foto de portada guardada.');
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); toast('No se ha podido leer esa imagen.'); };
+    img.src = url;
   }
   // Guardar un pago firmando quién lo marca. Si las reglas publicadas son anteriores a la firma, se guarda sin ella.
   function setPaid(mid, pid, on) {
@@ -831,6 +886,12 @@
       ui.confirm = null;
       run(B.updateMatch(m.id, { status: 'closed', final: final }), 'Partido cerrado. Ya cuenta en la tabla.').then(function () { ui.tab = 'tabla'; render(); });
     },
+    'cover-del': function () { run(B.setCover(null), 'Foto quitada.'); },
+    'copy-text': function (b) {
+      var v = b.dataset.v;
+      try { navigator.clipboard.writeText(v).then(function () { toast('Copiado.'); }, function () { toast('No se ha podido copiar. Mantén pulsado el texto para copiarlo.'); }); }
+      catch (e) { toast('No se ha podido copiar. Mantén pulsado el texto para copiarlo.'); }
+    },
     'cap-move': function (b) {
       var order = capOrder(), i = order.indexOf(b.dataset.pid), j = i + (+b.dataset.d);
       if (i < 0 || j < 0 || j >= order.length) return;
@@ -871,6 +932,12 @@
       if (S.players.some(function (p) { return p.id !== sh.pid && norm(p.name) === norm(name); })) { toast('Ya hay otro jugador con ese nombre.'); return; }
       ui.sheet = null;
       run(B.updatePlayer(sh.pid, { name: name }), 'Nombre cambiado.');
+    },
+    field: function () {
+      var f = ui.fld || {};
+      var cur = S.field || {}, get = function (k) { return String(f[k] !== undefined ? f[k] : (cur[k] || '')).trim(); };
+      var data = { iban: get('iban').replace(/\s+/g, '').toUpperCase().slice(0, 34), name: get('name').slice(0, 60), concept: get('concept').slice(0, 60), amount: get('amount').replace(/[^0-9.,]/g, '').slice(0, 6) };
+      run(B.setField(data), data.iban ? 'Datos del campo guardados.' : 'Datos del campo quitados.').then(function () { ui.fld = null; render(); });
     },
     tag: function () {
       var sh = ui.sheet;
@@ -925,6 +992,11 @@
     } else if (k === 'mypoll') {
       var pp = poll();
       if (ev.type === 'change' && pp) run(B.setProfile(el.dataset.pid, { poll: el.value === '' ? null : pp.options[+el.value] || null }), 'Respuesta guardada.');
+    } else if (k === 'cover') {
+      if (ev.type === 'change' && el.files && el.files[0]) uploadCover(el.files[0]);
+    } else if (k === 'fld') {
+      if (!ui.fld) ui.fld = { iban: (S.field && S.field.iban) || '', name: (S.field && S.field.name) || '', concept: (S.field && S.field.concept) || '', amount: (S.field && S.field.amount) || '' };
+      ui.fld[el.dataset.k] = el.value;
     } else if (k === 'capadd') {
       if (ev.type === 'change' && el.value && idx[el.value]) run(B.setCaptains(capOrder().concat([el.value])));
     } else if (k === 'cob') {
