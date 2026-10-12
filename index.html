@@ -1003,12 +1003,12 @@ window.createBackend = function () {
       '<ul class="lista-nombres" id="nombres">' + free.map(function (p) {
         return '<li data-n="' + esc(norm(p.name + ' ' + (p.aka || []).join(' '))) + '"><button data-act="claim" data-pid="' + p.id + '" data-fk="c-' + p.id + '">' + esc(p.name) + '</button></li>';
       }).join('') + taken.map(function (p) {
-        return '<li data-n="' + esc(norm(p.name)) + '"><button disabled title="Ya lo ha elegido otro móvil">' + esc(p.name) + ', cogido</button></li>';
+        return '<li data-n="' + esc(norm(p.name)) + '"><button disabled title="Ya lo ha elegido otro móvil">' + esc(p.name) + '</button></li>';
       }).join('') + '</ul>' +
       '<form class="tarjeta" data-form="new-player"><h3>No estoy en la lista</h3><div class="campo"><label for="nuevo">Tu nombre</label>' +
       '<p class="nota">Usa el mismo nombre con el que te apuntas en las listas de WhatsApp, para que todos te reconozcan.</p>' +
       '<input type="text" id="nuevo" data-in="newName" maxlength="30" autocomplete="off" value="' + esc(ui.newName) + '"></div><button class="btn pri" type="submit">Entrar con este nombre</button></form>' +
-      '<p class="nota">Si tu nombre sale como cogido y no has sido tú, pide a un administrador que lo libere.</p>' +
+      '<p class="nota">Los nombres en gris ya los ha elegido otro móvil. Si el tuyo sale en gris y no has sido tú, pide a un administrador que lo libere.</p>' +
       '<button class="enlace" data-act="browse" data-fk="mirar" style="align-self:flex-start">Solo quiero mirar</button></section>';
   }
 
