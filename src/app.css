@@ -113,6 +113,20 @@ button.fila:hover .nom{text-decoration:underline;text-underline-offset:3px}
   @keyframes baila{0%,60%,100%{transform:rotate(0)}70%{transform:rotate(-14deg)}80%{transform:rotate(12deg)}90%{transform:rotate(-6deg)}}
 }
 
+/* el Comité de Competición */
+.comite{padding:7px;border-radius:14px;background:repeating-linear-gradient(-45deg,#000 0 12px,#fde100 12px 24px)}
+.comite > div{background:#fde100;color:#000;border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.comite .ct{font-weight:700;font-size:13px}
+.comite .cf{font-weight:800;font-stretch:125%;font-size:19px;line-height:1.12;letter-spacing:-.01em;text-wrap:balance}
+.comite .cd{font-weight:600;font-size:14px}
+.comite.leve{background:repeating-linear-gradient(-45deg,var(--tinta) 0 12px,var(--raya) 12px 24px)}
+.comite.leve > div{background:var(--papel);color:var(--tinta)}
+@media (prefers-reduced-motion:no-preference){
+  .comite:not(.leve){background-size:34px 34px;animation:cinta 1s linear infinite}
+  @keyframes cinta{to{background-position:34px 0}}
+}
+.ficha small{font-weight:400;font-size:12px}
+
 /* cobros */
 .cobro{background:var(--tinta);color:var(--grada);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .cobro .t{font-weight:800;font-stretch:125%;font-size:22px;line-height:1.05;letter-spacing:-.01em;overflow-wrap:anywhere}

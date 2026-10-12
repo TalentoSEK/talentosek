@@ -108,14 +108,20 @@ service cloud.firestore {
             (status() == 'open' && changedOnly(['t', 'gk'])
               && request.resource.data.t in ['a', 'b', 's'] && request.resource.data.gk is bool)
             // partido jugado: declarar sus números y su pago
-            || (status() == 'review' && changedOnly(['g', 'a', 'og', 'paid'])
+            || (status() == 'review' && changedOnly(['g', 'a', 'og', 'paid', 'dec', 'paidBy'])
               && request.resource.data.g is int && request.resource.data.g >= 0 && request.resource.data.g <= 30
               && request.resource.data.a is int && request.resource.data.a >= 0 && request.resource.data.a <= 30
               && request.resource.data.og is int && request.resource.data.og >= 0 && request.resource.data.og <= 9
               && request.resource.data.paid is bool)
             // partido cerrado: solo su pago
-            || (status() == 'closed' && changedOnly(['paid']) && request.resource.data.paid is bool)
-          ));
+            || (status() == 'closed' && changedOnly(['paid', 'paidBy']) && request.resource.data.paid is bool)
+          ))
+          // Pagos de otros, con el partido ya jugado: quien cobra los marca y desmarca; cualquier jugador
+          // puede pagar por otro firmando con su nombre, y deshacer lo que él mismo marcó.
+          || (hasPlayer() && status() in ['review', 'closed'] && changedOnly(['paid', 'paidBy']) && request.resource.data.paid is bool
+              && (get(/databases/$(database)/documents/matches/$(mid)).data.cob == myPid()
+                  || (request.resource.data.paid == true && request.resource.data.paidBy == myPid())
+                  || (request.resource.data.paid == false && resource.data.get('paidBy', null) == myPid())));
         allow delete: if isAdmin() || (owns(pid) && status() == 'open');
       }
     }

@@ -210,8 +210,11 @@ window.createBackend = function () {
         var m = db.matches[mid], e = m && db.entries[mid][pid];
         if (!e) deny('Ese jugador ya no está en el partido.');
         if (!admin()) {
-          if (!owns(pid)) deny();
-          var ok = m.status === 'open' ? only(patch, ['t', 'gk']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid']) : only(patch, ['paid']);
+          var me = mine(), late = m.status !== 'open', pay = only(patch, ['paid', 'paidBy']);
+          var ok = owns(pid)
+            ? (m.status === 'open' ? only(patch, ['t', 'gk']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid', 'dec', 'paidBy']) : pay)
+            // pagos de otros: quien cobra los marca y desmarca; cualquier jugador puede pagar por otro y deshacerlo
+            : !!me && late && pay && (m.cob === me || (patch.paid === true && patch.paidBy === me) || (patch.paid === false && e.paidBy === me));
           if (!ok) deny('Eso solo puede cambiarlo un administrador.');
         }
         Object.keys(patch).forEach(function (k) { e[k] = patch[k]; });

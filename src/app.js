@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -211,11 +211,11 @@
         '<p>' + FEE + ' € por Bizum del partido del ' + esc(largo(m.date).toLowerCase()) + '. ' +
         (d.unpaid.length ? 'Faltan por pagar ' + d.unpaid.length + ' (' + (d.unpaid.length * FEE) + ' €).' : 'Han pagado todos.') + '</p>' +
         (d.unpaid.length ? '<ul>' + d.unpaid.map(function (pid) {
-          return S.me.isAdmin
+          return (S.me.isAdmin || m.cob === S.me.pid)
             ? '<li><button class="ficha" data-act="pay" data-mid="' + m.id + '" data-pid="' + pid + '" data-v="1" data-fk="pay-' + m.id + pid + '" aria-label="Marcar que ' + esc(nameOf(pid)) + ' ha pagado">' + esc(nameOf(pid)) + '</button></li>'
             : '<li><span class="ficha">' + esc(nameOf(pid)) + '</span></li>';
         }).join('') + '</ul>' : '') +
-        (S.me.isAdmin && d.unpaid.length ? '<p class="nota" style="color:inherit;opacity:.8">Toca un nombre cuando te haya pagado.</p>' : '') +
+        ((S.me.isAdmin || m.cob === S.me.pid) && d.unpaid.length ? '<p class="nota" style="color:inherit;opacity:.8">Toca un nombre cuando te haya pagado.</p>' : '') +
         (meOwes ? payButton(m, 'yapague-' + m.id) : '') +
         '</section>';
     }).join('');
@@ -253,22 +253,85 @@
           : '<button class="btn peligro" data-act="confirm" data-v="del-' + m.id + '" data-fk="del">Borrar convocatoria</button>') + '</div></div>' : '') +
       '</section>';
   }
+  var COMITE = {
+    sobra: [
+      'El Comité de Competición está investigando al egocéntrico que se suma goles o asistencias.',
+      'El VAR ha revisado la jugada: aquí sobra un gol y alguien lo sabe.',
+      'Hay más goles apuntados que balones entraron. Que el Pichichi de la imaginación dé un paso al frente.',
+      'La liga no reconoce los goles marcados en el vestuario.',
+      'Alguien confunde un tiro al palo con un gol. El Comité ya tiene su nombre.',
+      'Los goles del calentamiento no cuentan. El Comité ha abierto expediente.',
+      'Se busca delantero con más goles en la app que en el campo.'
+    ],
+    pases: [
+      'Hay más asistencias que goles. Dar el pase al que da el pase no cuenta.',
+      'El Comité recuerda que sacar de banda no es una asistencia.',
+      'Gritar «¡sola!» desde tu campo tampoco es asistencia. Expediente abierto.'
+    ],
+    falta: [
+      'Hay goles huérfanos. Su autor es demasiado humilde o no se acuerda de lo que hizo anoche.',
+      'El Comité busca al goleador anónimo. Recompensa: salir en la tabla.',
+      'Faltan goles por reclamar. Que no os dé vergüenza, para una vez que marcáis.',
+      'El acta no cuadra: alguien marcó y se ha ido a casa sin decir nada.'
+    ]
+  };
+  function pick(list, seed) {
+    var h = 7;
+    for (var i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return list[h % list.length];
+  }
+  function goles(n) { return n === 1 ? '1 gol' : n + ' goles'; }
   function cuadre(m) {
-    return ['a', 'b'].map(function (t) {
-      var off = t === 'a' ? (m.sa || 0) : (m.sb || 0), dec = declared(m, t);
-      if (dec === off) return '';
-      return dec < off
-        ? '<p class="aviso">A ' + TEAM[t] + ' le ' + (off - dec === 1 ? 'falta 1 gol' : 'faltan ' + (off - dec) + ' goles') + ' por apuntar.</p>'
-        : '<p class="aviso mal">' + TEAM[t] + ' tiene ' + (dec - off === 1 ? '1 gol apuntado' : (dec - off) + ' goles apuntados') + ' de más.</p>';
-    }).join('') || '<p class="aviso bien">Los goles apuntados cuadran con el marcador.</p>';
+    if (!m.scored) {
+      return '<p class="nota">' + (S.me.isAdmin ? 'Pon el marcador para que la app compruebe si los goles apuntados cuadran.' : 'Cuando un administrador ponga el marcador, la app comprobará si los goles apuntados cuadran.') + '</p>' +
+        (S.me.isAdmin ? '<button class="btn min" data-act="scored" data-mid="' + m.id + '" data-fk="scored" style="align-self:flex-start">El marcador está bien así</button>' : '');
+    }
+    var sobra = [], falta = [], pases = [], seed = m.id;
+    ['a', 'b'].forEach(function (t) {
+      var off = t === 'a' ? (m.sa || 0) : (m.sb || 0), dec = declared(m, t), as = 0;
+      side(m, t).forEach(function (x) { as += x.e.a || 0; });
+      seed += t + dec + '-' + as + '-' + off;
+      if (dec > off) sobra.push('En ' + TEAM[t] + ' hay ' + goles(dec - off) + ' de más.');
+      else if (dec < off) falta.push('En ' + TEAM[t] + ' ' + (off - dec === 1 ? 'falta 1 gol' : 'faltan ' + (off - dec) + ' goles') + ' por apuntar.');
+      if (as > off) pases.push('En ' + TEAM[t] + ' hay ' + as + ' asistencias para ' + goles(off) + '.');
+    });
+    if (!sobra.length && !falta.length && !pases.length) return '<p class="aviso bien">Los goles apuntados cuadran con el marcador.</p>';
+    var box = function (cls, frase, detalle) {
+      return '<div class="comite' + cls + '" role="alert"><div><p class="ct">Comité de Competición</p><p class="cf">' + esc(frase) + '</p><p class="cd">' + esc(detalle.join(' ')) + '</p></div></div>';
+    };
+    return (sobra.length ? box('', pick(COMITE.sobra, seed), sobra) : '') +
+      (pases.length ? box('', pick(COMITE.pases, seed), pases) : '') +
+      (falta.length ? box(' leve', pick(COMITE.falta, seed), falta) : '');
+  }
+  // Cada jugador contesta primero si ha marcado o asistido; hasta entonces no se le ofrece pagar.
+  function declaredFlag(m, e) {
+    if (e && e.dec) return true;
+    try { return localStorage.getItem('ts-dec-' + m.id + '-' + S.me.pid) === '1'; } catch (err) { return false; }
+  }
+  function resumen(e) {
+    var bits = [];
+    if (e.g) bits.push(goles(e.g));
+    if (e.a) bits.push(e.a === 1 ? '1 asistencia' : e.a + ' asistencias');
+    if (e.og) bits.push(e.og === 1 ? '1 gol en propia puerta' : e.og + ' goles en propia puerta');
+    return bits.length ? 'Has apuntado ' + lista(bits) + '.' : 'Has dicho que ni gol ni asistencia.';
   }
   function misNumeros(m) {
     var e = ents(m.id)[S.me.pid];
     if (!e || e.t === 's') return '';
-    var at = 'data-act="num" data-mid="' + m.id + '" data-pid="' + S.me.pid + '"';
-    return '<div class="tarjeta"><h3>Tus números</h3>' +
-      stepRow('Goles', e.g || 0, at + ' data-k="g"', 'yo-g') + stepRow('Asistencias', e.a || 0, at + ' data-k="a"', 'yo-a') + stepRow('En propia puerta', e.og || 0, at + ' data-k="og"', 'yo-og', 9) +
-      '</div>';
+    var w = ui.wiz && ui.wiz.mid === m.id ? ui.wiz : null, at = 'data-mid="' + m.id + '"';
+    if (w) {
+      var st = 'data-act="wiz" ' + at;
+      return '<div class="tarjeta"><h3>¿Cuántos?</h3>' +
+        stepRow('Goles', w.g, st + ' data-k="g"', 'wz-g') + stepRow('Asistencias', w.a, st + ' data-k="a"', 'wz-a') + stepRow('En propia puerta', w.og, st + ' data-k="og"', 'wz-og', 9) +
+        '<div class="fila-btn"><button class="btn pri" data-act="wiz-ok" ' + at + ' data-fk="wz-ok">Guardar mis números</button><button class="btn" data-act="wiz-no" data-fk="wz-no">Cancelar</button></div></div>';
+    }
+    if (!declaredFlag(m, e)) {
+      return '<div class="tarjeta"><h3>¿Has marcado gol o dado alguna asistencia?</h3><div class="fila-btn">' +
+        '<button class="btn pri" data-act="wiz-yes" ' + at + ' data-fk="wz-si">Sí</button><button class="btn" data-act="wiz-none" ' + at + ' data-fk="wz-nada">No</button></div>' +
+        '<p class="nota">En cuanto contestes podrás apuntar tu pago.</p></div>';
+    }
+    return '<div class="tarjeta"><h3>Tus números</h3><p class="aviso">' + resumen(e) + '</p>' +
+      '<button class="enlace" data-act="wiz-yes" ' + at + ' data-fk="wz-cambiar" style="align-self:flex-start">Cambiar mis números</button></div>';
   }
   function payButton(m, key) {
     return '<div class="pagar"><button class="pasta" data-act="pay" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-v="1" data-fk="' + key + '" aria-label="Ya he pagado">' +
@@ -287,15 +350,29 @@
       all.map(function (x) { return '<option value="' + x.pid + '"' + (m.cob === x.pid ? ' selected' : '') + '>' + esc(nameOf(x.pid)) + '</option>'; }).join('') + '</select></div>' : '';
     var chips = d.payers.map(function (pid) {
       if (pid === m.cob) return '';
-      var on = !!(es[pid] && es[pid].paid), can = S.me.isAdmin || owns(pid), label = esc(nameOf(pid)) + (on ? ' 💵' : '');
+      var on = !!(es[pid] && es[pid].paid), can = S.me.isAdmin || owns(pid) || m.cob === S.me.pid, by = es[pid] && es[pid].paidBy;
+      var label = esc(nameOf(pid)) + (on ? ' 💵' + (by && by !== pid && idx[by] ? ' <small>lo pagó ' + esc(nameOf(by)) + '</small>' : '') : '');
       return '<li>' + (can
         ? '<button class="ficha' + (on ? ' on' : '') + '" data-act="pay" data-mid="' + m.id + '" data-pid="' + pid + '" data-v="' + (on ? 0 : 1) + '" data-fk="pg-' + pid + '" aria-pressed="' + on + '">' + label + '</button>'
         : '<span class="ficha' + (on ? ' on' : '') + '">' + label + '</span>') + '</li>';
     }).join('');
-    var mineUnpaid = d.unpaid.indexOf(S.me.pid) >= 0;
+    var mineUnpaid = d.unpaid.indexOf(S.me.pid) >= 0, mine = es[S.me.pid], inMatch = !!mine && mine.t !== 's';
+    var ready = inMatch && declaredFlag(m, mine), others = d.unpaid.filter(function (pid) { return pid !== S.me.pid; });
+    var marked = others.filter(function (pid) { return ui.payFor[m.id + pid]; });
+    var pago = '';
+    if (inMatch && !ready && mineUnpaid) pago = '<p class="nota">Contesta arriba si has marcado o asistido y podrás apuntar tu pago.</p>';
+    if (ready) {
+      pago = (mineUnpaid ? payButton(m, 'yapague') : '') +
+        (others.length ? '<p class="nota">¿Pagas también por alguien? Márcalo aquí' + (mineUnpaid ? ' antes de tocar la cara.' : ' y confirma.') + '</p><ul class="sup" style="padding:0;background:none;flex-direction:row;flex-wrap:wrap;gap:6px">' +
+          others.map(function (pid) {
+            var on = !!ui.payFor[m.id + pid];
+            return '<li><button class="ficha' + (on ? ' yo' : '') + '" data-act="payfor" data-mid="' + m.id + '" data-pid="' + pid + '" data-fk="pf-' + pid + '" aria-pressed="' + on + '">' + (on ? '✓ ' : '+ ') + esc(nameOf(pid)) + '</button></li>';
+          }).join('') + '</ul>' : '') +
+        (!mineUnpaid && marked.length ? '<button class="btn pri" data-act="pay-others" data-mid="' + m.id + '" data-fk="payothers">Pagar por ' + lista(marked.map(nameOf)) + '</button>' : '');
+    }
     if (S.me.isAdmin) sel += '<button class="btn min" data-act="redraw" data-mid="' + m.id + '" data-fk="redraw" style="align-self:flex-start">Repetir el sorteo</button>';
     return '<div class="tarjeta"><h3>Pagos</h3>' + who + sel +
-      (mineUnpaid ? payButton(m, 'yapague') : '') +
+      pago + '<h3>Quién ha pagado</h3>' +
       '<ul class="sup" style="padding:0;background:none;flex-direction:row;flex-wrap:wrap;gap:6px">' + chips + '</ul>' +
       '<p class="nota">Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '. Los porteros no pagan.</p></div>';
   }
@@ -618,6 +695,32 @@
       render();
     });
   }
+  // Guardar un pago firmando quién lo marca. Si las reglas publicadas son anteriores a la firma, se guarda sin ella.
+  function setPaid(mid, pid, on) {
+    return B.updateEntry(mid, pid, { paid: on, paidBy: on ? (S.me.pid || null) : null }).then(null, function (e) {
+      if (e && e.code === 'denied' && pid === S.me.pid) return B.updateEntry(mid, pid, { paid: on });
+      throw e;
+    });
+  }
+  function payOthers(mid) {
+    var ids = Object.keys(ui.payFor).filter(function (k) { return k.indexOf(mid) === 0; }).map(function (k) { return k.slice(mid.length); });
+    ids.forEach(function (pid) { delete ui.payFor[mid + pid]; });
+    return Promise.all(ids.map(function (pid) { return setPaid(mid, pid, true).then(function () { return 1; }, function () { return 0; }); })).then(function (r) {
+      var ok = r.reduce(function (a, b) { return a + b; }, 0);
+      if (ok < ids.length) toast('No se ha podido pagar por todos los marcados.');
+      render();
+      return ok;
+    });
+  }
+  // Guardar los números de uno y dejar constancia de que ya ha contestado.
+  function declare(mid, nums) {
+    try { localStorage.setItem('ts-dec-' + mid + '-' + S.me.pid, '1'); } catch (err) {}
+    var full = { g: nums.g, a: nums.a, og: nums.og, dec: true };
+    run(B.updateEntry(mid, S.me.pid, full).then(null, function (e) {
+      if (e && e.code === 'denied') return B.updateEntry(mid, S.me.pid, nums);
+      throw e;
+    }), 'Apuntado.').then(function () { render(); });
+  }
   var act = {
     tab: function (b) { ui.tab = b.dataset.t; ui.onboarding = false; ui.pending = null; ui.confirm = null; ui.sheet = null; render(); try { window.scrollTo(0, 0); } catch (e) {} },
     sort: function (b) { ui.sort = b.dataset.k; render(); },
@@ -687,6 +790,7 @@
       var m = match(b.dataset.mid), k = b.dataset.t === 'a' ? 'sa' : 'sb', patch = {};
       if (!m) return;
       patch[k] = Math.max(0, Math.min(40, (m[k] || 0) + (+b.dataset.d)));
+      patch.scored = true;
       run(B.updateMatch(m.id, patch));
     },
     num: function (b) {
@@ -695,9 +799,27 @@
       patch[k] = Math.max(0, Math.min(k === 'og' ? 9 : 30, (e[k] || 0) + (+b.dataset.d)));
       run(B.updateEntry(b.dataset.mid, b.dataset.pid, patch));
     },
+    scored: function (b) { run(B.updateMatch(b.dataset.mid, { scored: true })); },
+    'wiz-yes': function (b) {
+      var e = ents(b.dataset.mid)[S.me.pid] || {};
+      ui.wiz = { mid: b.dataset.mid, g: e.g || 0, a: e.a || 0, og: e.og || 0 }; render();
+    },
+    wiz: function (b) {
+      if (!ui.wiz) return;
+      var k = b.dataset.k;
+      ui.wiz[k] = Math.max(0, Math.min(k === 'og' ? 9 : 30, ui.wiz[k] + (+b.dataset.d))); render();
+    },
+    'wiz-no': function () { ui.wiz = null; render(); },
+    'wiz-ok': function (b) { var w = ui.wiz; ui.wiz = null; if (w) declare(b.dataset.mid, { g: w.g, a: w.a, og: w.og }); },
+    'wiz-none': function (b) { declare(b.dataset.mid, { g: 0, a: 0, og: 0 }); },
+    payfor: function (b) { var k = b.dataset.mid + b.dataset.pid; if (ui.payFor[k]) delete ui.payFor[k]; else ui.payFor[k] = true; render(); },
+    'pay-others': function (b) { payOthers(b.dataset.mid).then(function (n) { if (n) toast('Pagado por ' + n + (n === 1 ? ' jugador' : ' jugadores') + '. 💵'); }); },
     pay: function (b) {
-      var on = b.dataset.v === '1';
-      run(B.updateEntry(b.dataset.mid, b.dataset.pid, { paid: on }), b.dataset.pid === S.me.pid && on ? 'Pagado. 💵' : null);
+      var on = b.dataset.v === '1', mid = b.dataset.mid, pid = b.dataset.pid, self = pid === S.me.pid;
+      setPaid(mid, pid, on).then(function () {
+        if (!self || !on) return;
+        return payOthers(mid).then(function (n) { toast(n ? 'Pagado, lo tuyo y lo de ' + n + ' más. 💵' : 'Pagado. 💵'); });
+      }, function (e) { toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.'); });
     },
     close: function (b) {
       var m = match(b.dataset.mid), final = {};

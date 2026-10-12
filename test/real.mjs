@@ -26,7 +26,9 @@ console.log('antes de las 20:00:', await p.evaluate(()=>[...document.querySelect
 await p.clock.fastForward('01:01:00'); await p.waitForTimeout(3300); console.log('sorteo:', await p.evaluate(()=>[...window.__store].filter(([k])=>k.startsWith('matches/')&&!k.includes('/entries/')).map(([k,v])=>JSON.stringify({cob:!!v.cob,drawn:v.drawn,drawAt:!!v.drawAt}))[0]), '|', await p.evaluate(()=>[...document.querySelectorAll('.estado')].pop().textContent));
 console.log('blancos:', await txt('.lado.a')); console.log('negros fila yo:', await txt('.fila.yo'), '| brazalete:', !!(await p.$('.fila.yo .cap')));
 console.log('estado antes de las 22:00:', await p.evaluate(()=>!!document.querySelector('.marcador')));
-await p.clock.fastForward('02:05:00'); await p.waitForTimeout(600); console.log('pasa solo a resultado:', await p.evaluate(()=>!!document.querySelector('.marcador'))); await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="yo-g-p"]'); await p.waitForTimeout(150);
+await p.clock.fastForward('02:05:00'); await p.waitForTimeout(600); console.log('pasa solo a resultado:', await p.evaluate(()=>!!document.querySelector('.marcador'))); console.log('sin marcador:', await p.evaluate(()=>!!document.querySelector('.comite')), '| pregunta:', await txt('.tarjeta:has([data-fk="wz-si"]) h3'));
+await p.click('[data-fk="sc-b-p"]'); await p.click('[data-fk="wz-si"]'); await p.click('[data-fk="wz-g-p"]'); await p.click('[data-fk="wz-g-p"]'); await p.click('[data-fk="wz-ok"]'); await p.waitForTimeout(200);
+console.log('comité:', await txt('.comite')); await p.click('[data-fk="sc-b-p"]'); await p.waitForTimeout(150); console.log('tus números:', await txt('.tarjeta:has([data-fk="wz-cambiar"])'));
 console.log('resultado:', await txt('.marcador'), '|', await p.evaluate(()=>[...document.querySelectorAll('.aviso')].map(a=>a.textContent).join(' / ')));
 console.log('pagos:', (await txt('.tarjeta:has(select[data-in=cob])')).slice(0,110));
 await p.click('[data-fk=close]'); await p.click('[data-fk=closeyes]'); await p.waitForTimeout(250);
