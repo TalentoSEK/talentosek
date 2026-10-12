@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, openM: {}, importText: '', importNote: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, openM: {}, importText: '', importNote: '', mergeWith: '', sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -808,6 +808,10 @@
         '<form data-form="tag" class="bloque"><div class="campo"><label for="p-tag">Símbolo a la derecha del nombre</label>' +
         '<input type="text" id="p-tag" data-in="tagInput" maxlength="4" autocomplete="off" placeholder="Por ejemplo ⭐" value="' + esc(ui.tagInput) + '"></div><button class="btn" type="submit">Guardar símbolo</button></form>' +
         '<div class="campo"><label for="p-pos">Posición</label>' + posSelect('p-pos', 'ppos', p.id) + '</div>' +
+        '<form data-form="merge" class="bloque"><div class="campo"><label for="p-merge">Es la misma persona que…</label><select id="p-merge" data-in="mergeWith"><option value="">Elige un jugador</option>' +
+        S.players.filter(function (q) { return q.id !== p.id; }).sort(byName).map(function (q) { return '<option value="' + q.id + '"' + (ui.mergeWith === q.id ? ' selected' : '') + '>' + esc(q.name) + '</option>'; }).join('') +
+        '</select></div><p class="nota">Se quedan en uno solo: el que tenga el móvil asociado, con su nombre. El otro nombre se guarda para reconocerlo en las listas de WhatsApp, y ocupa el sitio que tuviera cualquiera de los dos.</p>' +
+        '<button class="btn" type="submit">Unir jugadores</button></form>' +
         '<div class="fila-btn">' +
         (p.uid ? '<button class="btn" data-act="release" data-pid="' + p.id + '" data-fk="lib">Liberar su móvil</button>' : '') +
         (p.uid && p.uid !== S.me.uid ? '<button class="btn" data-act="admin" data-pid="' + p.id + '" data-v="' + (isAdm ? 0 : 1) + '" data-fk="adm">' + (isAdm ? 'Quitar de administrador' : 'Hacer administrador') + '</button>' : '') +
@@ -902,6 +906,46 @@
       return false;
     });
   }
+  // Unir dos fichas de la misma persona. Se queda la que tiene móvil (o la que se está gestionando) y hereda
+  // el sitio en los partidos, las estadísticas, el brazalete y el otro nombre como alias.
+  function mergePlayers(aPid, bPid) {
+    var A = idx[aPid], Bp = idx[bPid], no = function (msg) { return Promise.reject(Object.assign(new Error(msg), { code: 'denied' })); };
+    if (!A || !Bp || aPid === bPid) return no('Elige otro jugador.');
+    if (A.uid && Bp.uid) return no('Los dos tienen un móvil asociado. Libera antes el que sobre.');
+    var keep = Bp.uid && !A.uid ? Bp : A, drop = keep === A ? Bp : A, ops = [];
+    S.matches.forEach(function (m) {
+      var es = S.entries[m.id], d = es && es[drop.id];
+      if (d) {
+        var k = es[keep.id];
+        if (!k || (k.t === 's' && d.t !== 's')) {
+          var place = { t: d.t, gk: !!d.gk, n: d.n || null }, nums = { g: d.g || 0, a: d.a || 0, og: d.og || 0, paid: !!d.paid };
+          ops.push(k ? B.updateEntry(m.id, keep.id, Object.assign(place, nums))
+            : B.setEntry(m.id, keep.id, Object.assign({ at: d.at || Date.now() }, place)).then(function () { return B.updateEntry(m.id, keep.id, nums); }));
+        }
+        ops.push(B.deleteEntry(m.id, drop.id));
+      }
+      var patch = null;
+      if (m.final && m.final[drop.id]) {
+        var f = Object.assign({}, m.final);
+        if (!f[keep.id]) f[keep.id] = f[drop.id];
+        delete f[drop.id];
+        patch = { final: f };
+      }
+      if (m.cob === drop.id) { patch = patch || {}; patch.cob = keep.id; }
+      if (patch) ops.push(B.updateMatch(m.id, patch));
+    });
+    if ((S.captains || []).indexOf(drop.id) >= 0) {
+      ops.push(B.setCaptains(S.captains.map(function (id) { return id === drop.id ? keep.id : id; }).filter(function (id, i, arr) { return arr.indexOf(id) === i; })));
+    }
+    var aka = (keep.aka || []).concat([drop.name], drop.aka || []).filter(function (n, i, arr) {
+      return norm(n) !== norm(keep.name) && arr.map(norm).indexOf(norm(n)) === i;
+    });
+    var pp = { aka: aka };
+    if (!keep.tag && drop.tag) pp.tag = drop.tag;
+    ops.push(B.updatePlayer(keep.id, pp));
+    if (!keep.pos && drop.pos) ops.push(B.setProfile(keep.id, { pos: drop.pos }));
+    return Promise.all(ops).then(function () { return B.deletePlayer(drop.id); }).then(function () { return { keep: keep.name, drop: drop.name }; });
+  }
   // Guardar un pago firmando quién lo marca. Si las reglas publicadas son anteriores a la firma, se guarda sin ella.
   function setPaid(mid, pid, on) {
     return B.updateEntry(mid, pid, { paid: on, paidBy: on ? (S.me.pid || null) : null }).then(null, function (e) {
@@ -937,7 +981,7 @@
     'close-sheet': function () { ui.sheet = null; render(); },
     sheet: function (b) {
       ui.sheet = { k: b.dataset.k, mid: b.dataset.mid, pid: b.dataset.pid };
-      if (b.dataset.k === 'player' && idx[b.dataset.pid]) { ui.rename = idx[b.dataset.pid].name; ui.tagInput = idx[b.dataset.pid].tag || ''; }
+      if (b.dataset.k === 'player' && idx[b.dataset.pid]) { ui.rename = idx[b.dataset.pid].name; ui.tagInput = idx[b.dataset.pid].tag || ''; ui.mergeWith = ''; }
       if (b.dataset.k === 'guest') { ui.guestName = ''; ui.guestTeam = 's'; }
       render();
     },
@@ -1110,6 +1154,15 @@
       var cur = S.field || {}, get = function (k) { return String(f[k] !== undefined ? f[k] : (cur[k] || '')).trim(); };
       var data = { iban: get('iban').replace(/\s+/g, '').toUpperCase().slice(0, 34), name: get('name').slice(0, 60), concept: get('concept').slice(0, 60), amount: get('amount').replace(/[^0-9.,]/g, '').slice(0, 6) };
       run(B.setField(data), data.iban ? 'Datos del campo guardados.' : 'Datos del campo quitados.').then(function () { ui.fld = null; render(); });
+    },
+    merge: function () {
+      var sh = ui.sheet;
+      if (!sh || !ui.mergeWith) { toast('Elige con quién unirlo.'); return; }
+      var other = ui.mergeWith;
+      ui.sheet = null; ui.mergeWith = '';
+      toast('Uniendo…');
+      mergePlayers(sh.pid, other).then(function (r) { toast('Hecho: ' + r.drop + ' y ' + r.keep + ' son ya el mismo jugador, ' + r.keep + '.'); render(); },
+        function (e) { toast(e && e.code === 'denied' ? e.message : 'No se ha podido unir del todo. Revisa la pizarra y vuelve a intentarlo.'); render(); });
     },
     tag: function () {
       var sh = ui.sheet;
