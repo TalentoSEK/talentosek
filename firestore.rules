@@ -18,6 +18,7 @@ service cloud.firestore {
     function validName(n) { return n is string && n.size() > 0 && n.size() <= 30; }
     function validPos(p) { return p == null || p in ['por', 'def', 'med', 'ext', 'del']; }
     function validPoll(p) { return p == null || (p is string && p.size() <= 60); }
+    function validN() { return request.resource.data.get('n', null) == null || (request.resource.data.n is int && request.resource.data.n >= 1 && request.resource.data.n <= 11); }
 
     // Marca de que la app ya tiene su primer administrador.
     match /meta/claimed {
@@ -90,7 +91,10 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/matches/$(mid)/entries/$(request.resource.data.cob)).data.gk == false)
         // Fin del partido: cualquier jugador puede pasarlo de convocatoria a resultado a partir de su hora de fin.
         || (hasPlayer() && resource.data.status == 'open' && request.resource.data.status == 'review' && changedOnly(['status'])
-            && resource.data.get('endAt', null) != null && request.time.toMillis() >= resource.data.endAt);
+            && resource.data.get('endAt', null) != null && request.time.toMillis() >= resource.data.endAt)
+        // Táctica de cada equipo: la cambia cualquier jugador apuntado a ese partido (en la app, el capitán).
+        || (hasPlayer() && changedOnly(['tac']) && request.resource.data.tac is map
+            && exists(/databases/$(database)/documents/matches/$(mid)/entries/$(myPid())));
 
       function status() { return get(/databases/$(database)/documents/matches/$(mid)).data.status; }
 
@@ -98,14 +102,14 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create: if isAdmin()
           || (owns(pid) && status() == 'open'
-              && request.resource.data.keys().hasOnly(['t', 'gk', 'at', 'g', 'a', 'og', 'paid'])
+              && request.resource.data.keys().hasOnly(['t', 'gk', 'at', 'g', 'a', 'og', 'paid', 'n']) && validN()
               && request.resource.data.t in ['a', 'b', 's'] && request.resource.data.gk is bool
               && request.resource.data.g == 0 && request.resource.data.a == 0 && request.resource.data.og == 0
               && request.resource.data.paid == false);
         allow update: if isAdmin()
           || (owns(pid) && (
             // convocatoria abierta: cambiar de equipo o de portero
-            (status() == 'open' && changedOnly(['t', 'gk'])
+            (status() == 'open' && changedOnly(['t', 'gk', 'n']) && validN()
               && request.resource.data.t in ['a', 'b', 's'] && request.resource.data.gk is bool)
             // partido jugado: declarar sus números y su pago
             || (status() == 'review' && changedOnly(['g', 'a', 'og', 'paid', 'dec', 'paidBy'])

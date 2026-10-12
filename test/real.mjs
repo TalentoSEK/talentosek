@@ -21,7 +21,7 @@ await p.fill('#fld-iban','es00 0000 0000 0000 0000 0000'); await p.fill('#fld-na
 await p.fill('#poll-q','¿Quién llega tarde?'); await p.fill('#poll-o','Toni\nWilly\nToni'); await p.click('[data-form=poll] button'); await p.waitForTimeout(200); await p.selectOption('#mi-voto',{label:'Willy'}); await p.waitForTimeout(200); console.log('encuesta:', (await txt('.tarjeta:has(#mi-voto)')).slice(0,120));
 await p.click('[data-fk="tab-partido"]'); await p.fill('#new-date','2026-10-19'); await p.click('[data-form=open-match] button'); await p.waitForTimeout(200);
 console.log('convocatoria:', await txt('.cuando'), '|', await txt('.estado'));
-await p.click('.libre[data-t=b][data-gk="0"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));
+await p.click('.libre[data-t=b][data-n="9"]'); await p.waitForTimeout(150); console.log('apuntado:', await txt('.estado'));
 await p.click('[data-act=sheet][data-k=guest]'); await p.fill('#inv-n','Willy'); await p.selectOption('#inv-t','a'); await p.click('[data-form=guest] button[type=submit]'); await p.waitForTimeout(250);
 console.log('antes de las 20:00:', await p.evaluate(()=>[...document.querySelectorAll('.nota')].map(n=>n.textContent).filter(t=>/sortea|se abre solo/.test(t)).join(' / ')));
 await p.clock.fastForward('01:01:00'); await p.waitForTimeout(3300); console.log('sorteo:', await p.evaluate(()=>[...window.__store].filter(([k])=>k.startsWith('matches/')&&!k.includes('/entries/')).map(([k,v])=>JSON.stringify({cob:!!v.cob,drawn:v.drawn,drawAt:!!v.drawAt}))[0]), '|', await p.evaluate(()=>[...document.querySelectorAll('.estado')].pop().textContent));

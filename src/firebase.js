@@ -130,6 +130,7 @@ window.createBackend = function () {
       if ('poll' in patch) out.poll = patch.poll || null;
       return guard(updateDoc(doc(db, 'players', pid), out));
     },
+    setTactic: function (mid, t, v) { const p = {}; p['tac.' + t] = v; return guard(updateDoc(doc(db, 'matches', mid), p)); },
     setCover: function (data) { return guard(setDoc(doc(db, 'meta', 'cover'), { img: data || null })); },
     setField: function (data) { return guard(setDoc(doc(db, 'meta', 'field'), data)); },
     setCaptains: function (order) { return guard(setDoc(doc(db, 'meta', 'captains'), { order: order })); },
@@ -166,7 +167,9 @@ window.createBackend = function () {
       }));
     },
     setEntry: function (mid, pid, data) {
-      return guard(setDoc(doc(db, 'matches', mid, 'entries', pid), { t: data.t, gk: !!data.gk, at: data.at || Date.now(), g: 0, a: 0, og: 0, paid: false }));
+      const e = { t: data.t, gk: !!data.gk, at: data.at || Date.now(), g: 0, a: 0, og: 0, paid: false };
+      if (data.n) e.n = data.n;
+      return guard(setDoc(doc(db, 'matches', mid, 'entries', pid), e));
     },
     updateEntry: function (mid, pid, patch) { return guard(updateDoc(doc(db, 'matches', mid, 'entries', pid), patch)); },
     deleteEntry: function (mid, pid) { return guard(deleteDoc(doc(db, 'matches', mid, 'entries', pid))); }

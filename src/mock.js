@@ -123,6 +123,15 @@ window.createBackend = function () {
         if ('poll' in patch) p.poll = patch.poll || null;
       });
     },
+    setTactic: function (mid, t, v) {
+      return op(function () {
+        var m = db.matches[mid];
+        if (!m) deny('Ese partido ya no existe.');
+        if (!admin() && !(mine() && db.entries[mid][mine()])) deny();
+        m.tac = Object.assign({}, m.tac || {});
+        m.tac[t] = v;
+      });
+    },
     setCover: function (data) {
       return op(function () {
         if (!admin()) deny();
@@ -218,6 +227,7 @@ window.createBackend = function () {
         if (!m) deny('Ese partido ya no existe.');
         if (!admin() && !(owns(pid) && m.status === 'open')) deny(m.status === 'open' ? undefined : 'La convocatoria ya está cerrada.');
         db.entries[mid][pid] = { t: data.t, gk: !!data.gk, at: data.at || Date.now(), g: 0, a: 0, og: 0, paid: false };
+        if (data.n) db.entries[mid][pid].n = data.n;
       });
     },
     updateEntry: function (mid, pid, patch) {
@@ -227,7 +237,7 @@ window.createBackend = function () {
         if (!admin()) {
           var me = mine(), late = m.status !== 'open', pay = only(patch, ['paid', 'paidBy']);
           var ok = owns(pid)
-            ? (m.status === 'open' ? only(patch, ['t', 'gk']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid', 'dec', 'paidBy']) : pay)
+            ? (m.status === 'open' ? only(patch, ['t', 'gk', 'n']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid', 'dec', 'paidBy']) : pay)
             // pagos de otros: quien cobra los marca y desmarca; cualquier jugador puede pagar por otro y deshacerlo
             : !!me && late && pay && (m.cob === me || (patch.paid === true && patch.paidBy === me) || (patch.paid === false && e.paidBy === me));
           if (!ok) deny('Eso solo puede cambiarlo un administrador.');

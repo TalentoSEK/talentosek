@@ -99,6 +99,31 @@ button.fila:hover .nom{text-decoration:underline;text-underline-offset:3px}
 .ficha.yo{background:var(--amarilla);color:#000;border-color:#000}
 .ficha.on{background:var(--tinta);color:var(--grada);border-color:var(--tinta)}
 
+/* alineaciones */
+.alineaciones{display:flex;flex-direction:column;gap:10px}
+.tac{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.tac-eq{font-weight:800;font-stretch:125%;font-size:16px}
+.tac-v{font-weight:700;font-stretch:75%;font-size:18px}
+.tac .seg{display:inline-flex;border:1.5px solid var(--tinta);border-radius:10px;overflow:hidden}
+.tac .seg button{border:0;background:var(--papel);padding:7px 10px;min-height:38px;font-weight:700;font-stretch:75%;font-size:15px;color:var(--gris)}
+.tac .seg button + button{border-left:1.5px solid var(--tinta)}
+.tac .seg button[aria-pressed="true"]{background:var(--amarilla);color:#000}
+.cancha{position:relative;width:100%;aspect-ratio:2 / 3;max-width:100%;border-radius:14px;overflow:hidden;border:2px solid var(--tinta);
+  background:repeating-linear-gradient(180deg,#2f7d3a 0 9.09%,#2a7134 9.09% 18.18%)}
+.cancha .lineas{position:absolute;inset:0;width:100%;height:100%}
+.jg{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;width:76px;padding:0;border:0;background:none;color:#fff}
+.jg .dor{position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;font-weight:800;font-stretch:75%;font-size:15px;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+.jg.a .dor{background:#fff;color:#000;border:2px solid #000}
+.jg.b .dor{background:#000;color:#fff;border:2px solid #fff}
+.jg.yo .dor{box-shadow:0 0 0 3px var(--amarilla),0 2px 0 rgba(0,0,0,.35)}
+.jg .cap{position:absolute;top:-6px;right:-9px;width:16px;height:16px;border-radius:4px;background:var(--amarilla);color:#000;font-style:normal;font-size:10px;font-weight:800;font-stretch:100%;display:grid;place-items:center}
+.jg .jn{max-width:76px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.62);font-size:11px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jg .jn .sim{font-size:10px}
+.jg.vacio{cursor:pointer}
+.jg.vacio .dor{background:rgba(255,255,255,.16);color:#fff;border:2px dashed rgba(255,255,255,.85);box-shadow:none}
+.jg.vacio .jn{background:none;font-weight:600;opacity:.9}
+button.jg.vacio:hover .dor{background:rgba(253,225,0,.35)}
+
 /* marcador */
 .marcador{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;text-align:center}
 .marcador .eq{font-weight:800;font-stretch:125%;font-size:16px}
@@ -369,6 +394,15 @@ window.createBackend = function () {
         if ('poll' in patch) p.poll = patch.poll || null;
       });
     },
+    setTactic: function (mid, t, v) {
+      return op(function () {
+        var m = db.matches[mid];
+        if (!m) deny('Ese partido ya no existe.');
+        if (!admin() && !(mine() && db.entries[mid][mine()])) deny();
+        m.tac = Object.assign({}, m.tac || {});
+        m.tac[t] = v;
+      });
+    },
     setCover: function (data) {
       return op(function () {
         if (!admin()) deny();
@@ -464,6 +498,7 @@ window.createBackend = function () {
         if (!m) deny('Ese partido ya no existe.');
         if (!admin() && !(owns(pid) && m.status === 'open')) deny(m.status === 'open' ? undefined : 'La convocatoria ya está cerrada.');
         db.entries[mid][pid] = { t: data.t, gk: !!data.gk, at: data.at || Date.now(), g: 0, a: 0, og: 0, paid: false };
+        if (data.n) db.entries[mid][pid].n = data.n;
       });
     },
     updateEntry: function (mid, pid, patch) {
@@ -473,7 +508,7 @@ window.createBackend = function () {
         if (!admin()) {
           var me = mine(), late = m.status !== 'open', pay = only(patch, ['paid', 'paidBy']);
           var ok = owns(pid)
-            ? (m.status === 'open' ? only(patch, ['t', 'gk']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid', 'dec', 'paidBy']) : pay)
+            ? (m.status === 'open' ? only(patch, ['t', 'gk', 'n']) : m.status === 'review' ? only(patch, ['g', 'a', 'og', 'paid', 'dec', 'paidBy']) : pay)
             // pagos de otros: quien cobra los marca y desmarca; cualquier jugador puede pagar por otro y deshacerlo
             : !!me && late && pay && (m.cob === me || (patch.paid === true && patch.paidBy === me) || (patch.paid === false && e.paidBy === me));
           if (!ok) deny('Eso solo puede cambiarlo un administrador.');
@@ -595,12 +630,52 @@ window.createBackend = function () {
   }
   function poll() { var p = S.poll; return p && p.active && p.q && p.options && p.options.length ? p : null; }
   function owns(pid) { var p = idx[pid], me = S.me.pid; return !!p && !!me && (pid === me || p.guestOf === me); }
+  /* Dorsales y tácticas. Cada jugador de un equipo lleva un dorsal del 1 (portero) al 11, y el dorsal decide su sitio
+     en el campo según la táctica del equipo. Posiciones: [distancia desde la banda derecha del equipo, profundidad
+     desde su portería], ambas de 0 a 100. */
+  var BASE = { pos: { 1: [50, 12], 2: [12, 28], 3: [88, 28], 4: [37, 23], 5: [63, 23] },
+    names: { 1: 'Portero', 2: 'Lateral derecho', 3: 'Lateral izquierdo', 4: 'Central derecho', 5: 'Central izquierdo' } };
+  var TACTICS = {
+    '433': { label: '4-3-3', pos: { 6: [50, 45], 8: [30, 60], 10: [70, 60], 7: [15, 82], 9: [50, 88], 11: [85, 82] },
+      names: { 6: 'Pivote', 7: 'Extremo derecho', 8: 'Interior derecho', 9: 'Delantero centro', 10: 'Interior izquierdo', 11: 'Extremo izquierdo' } },
+    '442': { label: '4-4-2', pos: { 7: [12, 57], 6: [37, 51], 8: [63, 51], 11: [88, 57], 9: [35, 86], 10: [65, 86] },
+      names: { 6: 'Mediocentro derecho', 7: 'Medio derecho', 8: 'Mediocentro izquierdo', 9: 'Delantero derecho', 10: 'Delantero izquierdo', 11: 'Medio izquierdo' } },
+    '41221': { label: '4-1-2-2-1', pos: { 6: [50, 43], 8: [30, 57], 10: [70, 57], 7: [20, 73], 11: [80, 73], 9: [50, 88] },
+      names: { 6: 'Pivote', 7: 'Extremo derecho', 8: 'Interior derecho', 9: 'Delantero centro', 10: 'Interior izquierdo', 11: 'Extremo izquierdo' } }
+  };
+  var TAC_ORDER = ['433', '442', '41221'];
+  function tactic(m, t) { var k = m.tac && m.tac[t]; return TACTICS[k] ? k : '433'; }
+  function roleName(m, t, n) { return BASE.names[n] || TACTICS[tactic(m, t)].names[n] || ''; }
+  function spot(m, t, n) { return BASE.pos[n] || TACTICS[tactic(m, t)].pos[n]; }
+  // Reparte el equipo en sus 11 dorsales. Quien no tiene dorsal (o choca con otro) ocupa el primer hueco libre.
+  function slots(m, t, skip) {
+    var arr = [], extra = [], rest = [];
+    for (var i = 0; i < CAP; i++) arr.push(null);
+    side(m, t).forEach(function (x) {
+      if (x.pid === skip) return;
+      var n = x.e.gk ? 1 : x.e.n;
+      if (n >= 1 && n <= CAP && !arr[n - 1] && (n === 1) === !!x.e.gk) arr[n - 1] = x; else rest.push(x);
+    });
+    rest.forEach(function (x) {
+      if (x.e.gk && !arr[0]) { arr[0] = x; return; }
+      for (var j = 1; j < CAP; j++) if (!arr[j]) { arr[j] = x; return; }
+      extra.push(x);   // sin portero y con los 10 dorsales de campo ocupados: el undécimo juega igual
+    });
+    return { arr: arr, extra: extra };
+  }
+  function size(m, t, skip) { return side(m, t).filter(function (x) { return x.pid !== skip; }).length; }
+  // Dorsal de campo libre para alguien: el pedido si está libre, o el primero libre. null = sin dorsal pero cabe; false = completo.
+  function fieldSlot(m, t, want, moving) {
+    if (size(m, t, moving) >= CAP) return false;
+    var L = slots(m, t, moving);
+    if (want) return L.arr[want - 1] ? false : want;
+    for (var j = 1; j < CAP; j++) if (!L.arr[j]) return j + 1;
+    return null;
+  }
+  function gkFree(m, t, moving) { return size(m, t, moving) < CAP && !slots(m, t, moving).arr[0]; }
   function room(m, t, gk, moving) {
     if (t === 's') return true;
-    // Caben 11 por equipo, con portero o sin él: si se juega sin portero, los 11 pueden ser de campo.
-    var s = side(m, t).filter(function (x) { return x.pid !== moving; });
-    if (s.length >= CAP) return false;
-    return gk ? !s.some(function (x) { return x.e.gk; }) : true;
+    return gk ? gkFree(m, t, moving) : fieldSlot(m, t, 0, moving) !== false;
   }
   function dues(m) {
     var payers = side(m, 'a').concat(side(m, 'b')).filter(function (x) { return !x.e.gk; }).map(function (x) { return x.pid; });
@@ -693,21 +768,59 @@ window.createBackend = function () {
       ? '<li><button class="' + cls + '" data-act="sheet-entry" data-mid="' + m.id + '" data-pid="' + x.pid + '" data-fk="f-' + m.id + x.pid + '">' + inner + '</button></li>'
       : '<li><div class="' + cls + '">' + inner + '</div></li>';
   }
-  function libre(m, t, n, gk, full) {
-    var label = gk ? 'Falta portero' : 'Libre';
-    if (m.status !== 'open' || full) return gk ? '<li><div class="fila libre"><span class="n">1</span><span class="nom">Sin portero</span><span class="ext"></span></div></li>' : '';
-    return '<li><button class="fila libre" data-act="join" data-mid="' + m.id + '" data-t="' + t + '" data-gk="' + (gk ? 1 : 0) + '" data-fk="l-' + t + n + '" aria-label="' +
-      (gk ? 'Ponerme de portero en ' : 'Apuntarme en ') + TEAM[t] + '"><span class="n">' + n + '</span><span class="nom">' + label + '</span><span class="ext"></span></button></li>';
+  function libre(m, t, n) {
+    var role = n === 1 ? 'Falta portero' : roleName(m, t, n);
+    return '<li><button class="fila libre" data-act="join" data-mid="' + m.id + '" data-t="' + t + '" data-n="' + n + '" data-fk="l-' + t + n + '" aria-label="Apuntarme en ' +
+      TEAM[t] + ' de ' + esc(roleName(m, t, n).toLowerCase()) + '"><span class="n">' + n + '</span><span class="nom">' + esc(role) + '</span><span class="ext">' + (n === 1 ? '' : 'libre') + '</span></button></li>';
   }
   function lado(m, t) {
-    var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; }), html = '';
-    var full = s.length >= CAP, cap = captainOf(m, t);
-    html += gk ? fila(m, 1, gk, cap) : libre(m, t, 1, true, full);
-    var rows = m.status === 'open' ? CAP - 1 : field.length;
-    for (var i = 0; i < Math.max(rows, field.length); i++) html += field[i] ? fila(m, i + 2, field[i], cap) : libre(m, t, i + 2, false, full);
-    return '<section class="lado ' + t + '" aria-label="' + TEAM[t] + '"><h3>' + TEAM[t] + ' <span>' + s.length + (m.status === 'open' ? ' de ' + CAP : '') + '</span></h3><ol>' + html + '</ol></section>';
+    var L = slots(m, t), count = side(m, t).length, full = count >= CAP, open = m.status === 'open', cap = captainOf(m, t), html = '';
+    for (var i = 0; i < CAP; i++) {
+      if (L.arr[i]) html += fila(m, i + 1, L.arr[i], cap);
+      else if (open && !full) html += libre(m, t, i + 1);
+      else if (i === 0) html += '<li><div class="fila libre"><span class="n">1</span><span class="nom">Sin portero</span><span class="ext"></span></div></li>';
+    }
+    L.extra.forEach(function (x) { html += fila(m, '–', x, cap); });
+    return '<section class="lado ' + t + '" aria-label="' + TEAM[t] + '"><h3>' + TEAM[t] + ' <span>' + count + (open ? ' de ' + CAP : '') + '</span></h3><ol>' + html + '</ol></section>';
   }
   function pizarra(m) { return '<div class="pizarra">' + lado(m, 'a') + lado(m, 'b') + '</div>'; }
+
+  var CANCHA = '<svg class="lineas" viewBox="0 0 100 150" preserveAspectRatio="none" aria-hidden="true"><g fill="none" stroke="rgba(255,255,255,.8)" stroke-width=".5">' +
+    '<rect x="2" y="2" width="96" height="146"/><line x1="2" y1="75" x2="98" y2="75"/><circle cx="50" cy="75" r="10"/>' +
+    '<rect x="21" y="2" width="58" height="20"/><rect x="36" y="2" width="28" height="7"/><rect x="21" y="128" width="58" height="20"/><rect x="36" y="141" width="28" height="7"/>' +
+    '<path d="M40 22 A11 11 0 0 0 60 22"/><path d="M40 128 A11 11 0 0 1 60 128"/></g>' +
+    '<g fill="rgba(255,255,255,.8)"><circle cx="50" cy="75" r=".8"/><circle cx="50" cy="15" r=".7"/><circle cx="50" cy="135" r=".7"/></g></svg>';
+  function campo(m) {
+    var open = m.status === 'open', html = '';
+    ['a', 'b'].forEach(function (t) {
+      var L = slots(m, t), cap = captainOf(m, t), full = side(m, t).length >= CAP;
+      for (var n = 1; n <= CAP; n++) {
+        var p = spot(m, t, n), x = L.arr[n - 1];
+        // Blancos atacan hacia arriba desde la mitad de abajo; Negros, hacia abajo desde la de arriba.
+        var left = t === 'a' ? 100 - p[0] : p[0], top = t === 'a' ? 100 - p[1] / 2 : p[1] / 2;
+        var style = ' style="left:' + left + '%;top:' + top + '%"', title = roleName(m, t, n);
+        if (x) {
+          html += '<div class="jg ' + t + (x.pid === S.me.pid ? ' yo' : '') + '"' + style + ' title="' + esc(title) + '"><span class="dor">' + n +
+            (cap === x.pid ? '<i class="cap">C</i>' : '') + '</span><span class="jn">' + nm(x.pid) + '</span></div>';
+        } else if (open && !full) {
+          html += '<button class="jg ' + t + ' vacio"' + style + ' data-act="join" data-mid="' + m.id + '" data-t="' + t + '" data-n="' + n + '" data-fk="c-' + t + n + '" aria-label="Apuntarme en ' +
+            TEAM[t] + ' de ' + esc(title.toLowerCase()) + '" title="' + esc(title) + '"><span class="dor">' + n + '</span><span class="jn">' + (n === 1 ? 'portero' : 'libre') + '</span></button>';
+        }
+      }
+    });
+    var bar = ['b', 'a'].map(function (t) {
+      var can = S.me.isAdmin || (S.me.pid && captainOf(m, t) === S.me.pid), cur = tactic(m, t);
+      return '<div class="tac"><span class="tac-eq">' + TEAM[t] + '</span>' + (can
+        ? '<span class="seg" role="group" aria-label="Táctica de ' + TEAM[t] + '">' + TAC_ORDER.map(function (k) {
+            return '<button data-act="tac" data-mid="' + m.id + '" data-t="' + t + '" data-v="' + k + '" data-fk="tac-' + t + k + '" aria-pressed="' + (cur === k) + '">' + TACTICS[k].label + '</button>';
+          }).join('') + '</span>'
+        : '<span class="tac-v">' + TACTICS[cur].label + '</span>') + '</div>';
+    });
+    return '<section class="alineaciones" aria-label="Alineaciones"><h2>Alineaciones</h2>' + bar[0] +
+      '<div class="cancha">' + CANCHA + html + '</div>' + bar[1] +
+      '<p class="nota">Cada dorsal es un puesto: el 2 es el lateral derecho, el 4 el central derecho, el 9 el delantero centro… ' +
+      (open ? 'Toca un hueco libre del campo o de la pizarra para ponerte en ese puesto. ' : '') + 'La táctica la eligen el capitán de cada equipo o un administrador.</p></section>';
+  }
 
   /* ---------- pestaña Partido ---------- */
   function cobros() {
@@ -755,6 +868,7 @@ window.createBackend = function () {
       (isFinite(endTime(m)) ? '<p class="nota">A las ' + hhmm(endTime(m)) + ', al acabar el partido, se abre solo el resultado para apuntar goles y pagos.</p>' : '') +
       '<div class="fila-btn">' + (S.me.pid ? '<button class="btn" data-act="sheet" data-k="guest" data-mid="' + m.id + '" data-fk="inv">Traer a un invitado</button>' : '') +
       '<button class="btn" data-act="copy" data-mid="' + m.id + '" data-fk="copy">Copiar lista para WhatsApp</button></div>' +
+      campo(m) +
       (S.me.isAdmin ? '<div class="tarjeta"><h3>Administrar</h3><p class="nota">Toca cualquier nombre para moverlo o quitarlo. Cuando acabe el partido, pásalo a resultado para que cada uno apunte lo suyo.</p>' +
         '<div class="fila-btn"><button class="btn osc" data-act="status" data-mid="' + m.id + '" data-v="review" data-fk="jugado">Ya se ha jugado</button>' +
         (ui.confirm === 'del-' + m.id
@@ -1198,11 +1312,10 @@ window.createBackend = function () {
   function whatsapp(m) {
     var out = [largo(m.date) + ' ' + (m.time || '20:30') + ' SEK', 'Bizum ' + FEE + ' euros', ''];
     ['a', 'b'].forEach(function (t) {
-      var s = side(m, t), gk = s.filter(function (x) { return x.e.gk; })[0], field = s.filter(function (x) { return !x.e.gk; });
-      var cap = captainOf(m, t), nm = function (x) { return x ? nameOf(x.pid) + (x.pid === cap ? ' (C)' : '') : ''; };
+      var L = slots(m, t), cap = captainOf(m, t), nm = function (x) { return x ? nameOf(x.pid) + (x.pid === cap ? ' (C)' : '') : ''; };
       out.push(TEAM[t].toUpperCase());
-      out.push('1. ' + nm(gk));
-      for (var i = 0; i < Math.max(CAP - 1, field.length); i++) out.push((i + 2) + '. ' + nm(field[i]));
+      for (var i = 0; i < CAP; i++) out.push((i + 1) + '. ' + nm(L.arr[i]));
+      L.extra.forEach(function (x) { out.push('-. ' + nm(x)); });
       out.push('');
     });
     out.push('Suplentes:');
@@ -1244,6 +1357,18 @@ window.createBackend = function () {
     };
     img.onerror = function () { URL.revokeObjectURL(url); toast('No se ha podido leer esa imagen.'); };
     img.src = url;
+  }
+  // Apuntar o mover a alguien a un equipo y dorsal. Si las reglas publicadas aún no conocen los dorsales, se guarda sin él.
+  function placeEntry(m, pid, t, n, fresh) {
+    var data = { t: t, gk: n === 1, n: n || null };
+    var go = function (d) { return fresh ? B.setEntry(m.id, pid, Object.assign({ at: Date.now() }, d)) : B.updateEntry(m.id, pid, d); };
+    return go(data).then(null, function (e) {
+      if (e && e.code === 'denied') return go({ t: data.t, gk: data.gk });
+      throw e;
+    }).then(function () { return true; }, function (e) {
+      toast(e && e.code === 'denied' ? e.message : 'No se ha podido guardar. Comprueba la conexión y vuelve a intentarlo.');
+      return false;
+    });
   }
   // Guardar un pago firmando quién lo marca. Si las reglas publicadas son anteriores a la firma, se guarda sin ella.
   function setPaid(mid, pid, on) {
@@ -1300,20 +1425,28 @@ window.createBackend = function () {
       enter(pend, pend.pos, p && i >= 0 && p.options[i] ? p.options[i] : null);
     },
     join: function (b) {
-      var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1', pid = S.me.pid;
+      var m = match(b.dataset.mid), t = b.dataset.t, want = +b.dataset.n || 0, pid = S.me.pid;
       if (!pid) { ui.onboarding = true; render(); return; }
       if (!m || m.status !== 'open') return;
-      if (!room(m, t, gk, pid)) { toast(gk ? 'Ese equipo ya tiene portero.' : TEAM[t] + ' está completo. Puedes apuntarte de suplente.'); return; }
-      var e = ents(m.id)[pid];
-      run(e ? B.updateEntry(m.id, pid, { t: t, gk: gk }) : B.setEntry(m.id, pid, { t: t, gk: gk, at: Date.now() }),
-        t === 's' ? 'Apuntado de suplente.' : gk ? 'Apuntado de portero en ' + TEAM[t] + '.' : 'Apuntado en ' + TEAM[t] + '.');
+      var n = null;
+      if (t !== 's') {
+        if (want === 1) { if (!gkFree(m, t, pid)) { toast('Ese equipo ya tiene portero.'); return; } n = 1; }
+        else { n = fieldSlot(m, t, want, pid); if (n === false) { toast(want ? 'Ese puesto ya está cogido.' : TEAM[t] + ' está completo. Puedes apuntarte de suplente.'); return; } }
+      }
+      var e = ents(m.id)[pid], role = n ? roleName(m, t, n).toLowerCase() : '';
+      placeEntry(m, pid, t, n, !e).then(function (ok) {
+        if (ok) toast(t === 's' ? 'Apuntado de suplente.' : 'Apuntado en ' + TEAM[t] + (role ? ' de ' + role : '') + '.');
+      });
     },
     move: function (b) {
-      var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1';
+      var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1', pid = b.dataset.pid, n = null;
       if (!m) return;
-      if (!room(m, t, gk, b.dataset.pid)) { toast(gk ? 'Ese equipo ya tiene portero.' : TEAM[t] + ' está completo.'); return; }
+      if (t !== 's') {
+        if (gk) { if (!gkFree(m, t, pid)) { toast('Ese equipo ya tiene portero.'); return; } n = 1; }
+        else { n = fieldSlot(m, t, 0, pid); if (n === false) { toast(TEAM[t] + ' está completo.'); return; } }
+      }
       ui.sheet = null;
-      run(B.updateEntry(m.id, b.dataset.pid, { t: t, gk: gk }));
+      placeEntry(m, pid, t, n, false);
     },
     leave: function (b) {
       ui.sheet = null;
@@ -1395,6 +1528,7 @@ window.createBackend = function () {
     },
     'cap-del': function (b) { run(B.setCaptains(capOrder().filter(function (pid) { return pid !== b.dataset.pid; }))); },
     redraw: function (b) { delete drawing[b.dataset.mid]; run(B.updateMatch(b.dataset.mid, { cob: null, drawn: false }), 'Sorteo repetido.'); },
+    tac: function (b) { run(B.setTactic(b.dataset.mid, b.dataset.t, b.dataset.v), 'Táctica de ' + TEAM[b.dataset.t] + ': ' + TACTICS[b.dataset.v].label + '.'); },
     bootstrap: function () { run(B.bootstrapAdmin(), 'Hecho. Ya eres administrador.'); },
     'release-me': function () { ui.confirm = null; run(B.releasePlayer(S.me.pid)).then(function () { ui.onboarding = true; render(); }); },
     release: function (b) { ui.sheet = null; run(B.releasePlayer(b.dataset.pid), 'Móvil liberado. El nombre vuelve a estar libre.'); },
@@ -1415,10 +1549,11 @@ window.createBackend = function () {
       var name = ui.guestName.trim().replace(/\s+/g, ' '), sh = ui.sheet, m = sh && match(sh.mid), t = ui.guestTeam;
       if (!name || !m) { toast('Escribe el nombre del invitado.'); return; }
       if (S.players.some(function (p) { return norm(p.name) === norm(name); })) { toast('Ya hay un ' + name + ' en la lista. Añade un apellido para distinguirlo.'); return; }
-      if (!room(m, t, false, null)) { toast(TEAM[t] + ' está completo. Apúntalo de suplente.'); return; }
+      var gn = t === 's' ? null : fieldSlot(m, t, 0, null);
+      if (gn === false) { toast(TEAM[t] + ' está completo. Apúntalo de suplente.'); return; }
       ui.sheet = null;
       run(B.createPlayer({ name: name, guestOf: S.me.pid })).then(function (pid) {
-        if (pid) run(B.setEntry(m.id, pid, { t: t, gk: false, at: Date.now() }), name + ' apuntado en ' + TEAM[t].toLowerCase() + '.');
+        if (pid) placeEntry(m, pid, t, gn, true).then(function (ok) { if (ok) toast(name + ' apuntado en ' + TEAM[t].toLowerCase() + '.'); });
       });
     },
     rename: function () {
@@ -1517,7 +1652,7 @@ window.createBackend = function () {
   }
   // Ni el sorteo ni el paso a resultado tienen servidor: los hace el primer móvil identificado que tenga la app abierta
   // a partir de la hora. Las reglas solo dejan hacer cada cosa una vez y a partir de su hora.
-  var drawing = {}, advancing = {}, drawTimer = null;
+  var drawing = {}, advancing = {}, numbering = {}, drawTimer = null;
   function sorteo() {
     clearTimeout(drawTimer);
     if (!S.me.pid) return;
@@ -1528,6 +1663,17 @@ window.createBackend = function () {
       // partidos creados antes de existir estas horas: el móvil de un administrador se las pone
       if (S.me.isAdmin && (m.drawAt === undefined || m.endAt === undefined) && isFinite(t)) {
         B.updateMatch(m.id, { drawAt: t, endAt: m.endAt === undefined ? endTime(m) : m.endAt }).then(null, function () {});
+      }
+      // apuntados de antes de existir los dorsales: el móvil de un administrador les fija el que tienen ahora,
+      // para que no se muevan cuando alguien se borre
+      if (S.me.isAdmin && m.status === 'open' && S.entries[m.id]) {
+        ['a', 'b'].forEach(function (tm) {
+          slots(m, tm).arr.forEach(function (x, i) {
+            if (!x || x.e.gk || x.e.n || numbering[m.id + x.pid]) return;
+            numbering[m.id + x.pid] = true;
+            B.updateEntry(m.id, x.pid, { n: i + 1 }).then(null, function () {});
+          });
+        });
       }
       if (m.status === 'open') {
         var te = endTime(m);
