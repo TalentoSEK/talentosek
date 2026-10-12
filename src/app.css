@@ -188,6 +188,12 @@ tbody tr.sin th,tbody tr.sin td{color:var(--gris);font-weight:400}
 .dos li{font-size:15px;overflow-wrap:anywhere}
 .dos li span{color:var(--gris);font-size:13px}
 
+.partido-cab{display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%;padding:0;border:0;background:none;text-align:left;color:inherit}
+.partido-cab .res{display:flex;align-items:baseline;gap:10px;font-weight:800;font-stretch:62%;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
+.partido-cab .res small{font-stretch:125%;font-size:14px;font-weight:800}
+.partido-cab .res i{font-style:normal;color:var(--gris);font-weight:500}
+.partido-cab .ver{font-weight:700;font-size:14px;text-decoration:underline;text-underline-offset:3px}
+
 /* formularios */
 .campo{display:flex;flex-direction:column;gap:6px}
 .campo label{font-weight:700;font-size:14px}

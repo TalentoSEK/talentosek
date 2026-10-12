@@ -6,7 +6,7 @@
   var B = window.createBackend();
   var S = { loading: true, me: { uid: null, pid: null, isAdmin: false }, players: [], admins: {}, matches: [], entries: {} };
   var idx = {};
-  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
+  var ui = { tab: 'partido', sort: 'g', onboarding: false, pending: null, pollQ: null, pollOpts: null, addNames: '', tagInput: '', wiz: null, payFor: {}, fld: null, openM: {}, sheet: null, confirm: null, newName: '', guestName: '', guestTeam: 's', newDate: '', rename: '' };
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -135,6 +135,25 @@
   }
   function size(m, t, skip) { return side(m, t).filter(function (x) { return x.pid !== skip; }).length; }
   // Dorsal de campo libre para alguien: el pedido si está libre, o el primero libre. null = sin dorsal pero cabe; false = completo.
+  // Titulares: desde este partido, solo puede apuntarse en Blancos o Negros quien jugó los dos lunes anteriores;
+  // el resto entra de suplente. Los administradores son la excepción y pueden subir a quien haga falta.
+  var RULE_FROM = '2026-10-26';
+  function lastTwo(m) { return sorted().filter(function (o) { return o.date < m.date && o.status !== 'open'; }).slice(-2); }
+  function ruleOn(m) { return m.date >= RULE_FROM && lastTwo(m).length === 2; }
+  function canStart(m, pid) {
+    if (!ruleOn(m) || S.me.isAdmin) return true;
+    return lastTwo(m).every(function (o) {
+      var src = o.status === 'closed' && o.final ? o.final : ents(o.id), e = src[pid];
+      return !!e && (e.t === 'a' || e.t === 'b');
+    });
+  }
+  function benchMsg(m, who) {
+    var ds = lastTwo(m).map(function (o) { return fmt(o.date, { day: 'numeric', month: 'long' }); });
+    ui.sheet = { k: 'msg', title: who ? who + ' empieza en el banquillo' : 'Te toca empezar en el banquillo',
+      text: 'Para apuntarse de titular hay que haber jugado los dos últimos lunes (' + lista(ds) + '). ' +
+        (who ? 'Apúntalo de suplente' : 'Puedes apuntarte de suplente') + ' y un administrador puede subir a quien haga falta.' };
+    render();
+  }
   function fieldSlot(m, t, want, moving) {
     if (size(m, t, moving) >= CAP) return false;
     var L = slots(m, t, moving);
@@ -316,6 +335,7 @@
     if (!S.me.pid) return '<div class="estado"><p>Elige quién eres para apuntarte.</p><button class="btn pri" data-act="identify" data-fk="ident2">Elegir quién soy</button></div>';
     var e = ents(m.id)[S.me.pid], ask = idx[S.me.pid] && !idx[S.me.pid].pos
       ? '<div class="estado"><p>Todavía no has dicho de qué juegas.</p><button class="btn min" data-act="ask-pos" data-fk="askpos">Elegir posición</button></div>' : '';
+    if (!e && !canStart(m, S.me.pid)) return ask + '<div class="estado"><p>No jugaste los dos últimos lunes, así que esta vez entras de suplente.</p><button class="btn min" data-act="join" data-mid="' + m.id + '" data-t="s" data-fk="sup2">Apuntarme de suplente</button></div>';
     if (!e) return ask + '<div class="estado"><p>No estás apuntado. Toca un hueco libre de la pizarra.</p></div>';
     var txt = e.t === 's' ? 'Estás de suplente.' : e.gk ? 'Eres el portero de ' + TEAM[e.t] + '.' : 'Juegas con ' + TEAM[e.t] + '.';
     return ask + '<div class="estado"><p>' + txt + '</p><button class="btn min" data-act="leave" data-mid="' + m.id + '" data-pid="' + S.me.pid + '" data-fk="salir">Borrarme</button></div>';
@@ -335,6 +355,7 @@
     return '<section class="vista" aria-label="Convocatoria"><div class="bloque"><h1 class="cuando">' + esc(largo(m.date)) + '</h1>' +
       '<p class="donde">A las ' + esc(m.time || '20:30') + ' en el SEK. Hay ' + n + ' apuntados de ' + (CAP * 2) + '.</p></div>' +
       miEstado(m) + pizarra(m) + suplentes(m) + sorteoLine(m) +
+      (ruleOn(m) ? '<p class="nota">De titular solo pueden apuntarse quienes jugaron los dos últimos lunes; el resto, de suplente.</p>' : '') +
       (isFinite(endTime(m)) ? '<p class="nota">A las ' + hhmm(endTime(m)) + ', al acabar el partido, se abre solo el resultado para apuntar goles y pagos.</p>' : '') +
       '<div class="fila-btn">' + (S.me.pid ? '<button class="btn" data-act="sheet" data-k="guest" data-mid="' + m.id + '" data-fk="inv">Traer a un invitado</button>' : '') +
       '<button class="btn" data-act="copy" data-mid="' + m.id + '" data-fk="copy">Copiar lista para WhatsApp</button></div>' +
@@ -553,10 +574,15 @@
   function viewPartidos() {
     var ms = closed().reverse();
     if (!ms.length) return '<section class="vista"><div class="bloque"><h1 class="cuando">Aún no hay partidos cerrados</h1><p class="donde">Aquí quedará cada lunes con su resultado, goleadores y asistentes.</p></div></section>';
-    return '<section class="vista"><h1 class="cuando">Partidos jugados</h1>' + ms.map(function (m) {
-      var d = dues(m);
-      return '<article class="partido"><p class="nota">' + esc(largo(m.date)) + '</p>' +
-        '<p class="res"><small>Blancos</small>' + (m.sa || 0) + '<i>–</i>' + (m.sb || 0) + '<small>Negros</small></p>' +
+    return '<section class="vista"><h1 class="cuando">Partidos jugados</h1><p class="nota">Toca un partido para ver goleadores, asistencias y tácticas.</p>' + ms.map(function (m) {
+      var d = dues(m), open = !!ui.openM[m.id];
+      var head = '<button class="partido-cab" data-act="toggle-m" data-mid="' + m.id + '" data-fk="pm-' + m.id + '" aria-expanded="' + open + '">' +
+        '<span class="nota">' + esc(largo(m.date)) + '</span>' +
+        '<span class="res"><small>Blancos</small>' + (m.sa || 0) + '<i>–</i>' + (m.sb || 0) + '<small>Negros</small></span>' +
+        '<span class="ver">' + (open ? 'Ocultar' : 'Ver el partido') + '</span></button>';
+      if (!open) return '<article class="partido">' + head + '</article>';
+      return '<article class="partido">' + head +
+        '<p class="aviso">Tácticas: Blancos ' + TACTICS[tactic(m, 'a')].label + ', Negros ' + TACTICS[tactic(m, 'b')].label + '.</p>' +
         '<div class="dos">' + alineacion(m, 'a') + alineacion(m, 'b') + '</div>' +
         (m.cob ? '<p class="nota">Cobró ' + esc(nameOf(m.cob)) + '.' + (d.unknown ? '' : d.unpaid.length ? ' Han pagado ' + (d.payers.length - d.unpaid.length) + ' de ' + d.payers.length + '.' : ' Pagaron todos.') + '</p>' : '') +
         (S.me.isAdmin ? '<div class="fila-btn"><button class="btn min" data-act="status" data-mid="' + m.id + '" data-v="review" data-fk="re-' + m.id + '">Reabrir para corregir</button>' +
@@ -899,6 +925,7 @@
       if (!pid) { ui.onboarding = true; render(); return; }
       if (!m || m.status !== 'open') return;
       var n = null;
+      if (t !== 's' && !canStart(m, pid)) { benchMsg(m); return; }
       if (t !== 's') {
         if (want === 1) { if (!gkFree(m, t, pid)) { toast('Ese equipo ya tiene portero.'); return; } n = 1; }
         else { n = fieldSlot(m, t, want, pid); if (n === false) { toast(want ? 'Ese puesto ya está cogido.' : TEAM[t] + ' está completo. Puedes apuntarte de suplente.'); return; } }
@@ -911,6 +938,7 @@
     move: function (b) {
       var m = match(b.dataset.mid), t = b.dataset.t, gk = b.dataset.gk === '1', pid = b.dataset.pid, n = null;
       if (!m) return;
+      if (t !== 's' && !canStart(m, pid)) { benchMsg(m, pid === S.me.pid ? '' : nameOf(pid)); return; }
       if (t !== 's') {
         if (gk) { if (!gkFree(m, t, pid)) { toast('Ese equipo ya tiene portero.'); return; } n = 1; }
         else { n = fieldSlot(m, t, 0, pid); if (n === false) { toast(TEAM[t] + ' está completo.'); return; } }
@@ -979,11 +1007,18 @@
       if (!m) return;
       if (!side(m, 'a').length || !side(m, 'b').length) { toast('Hace falta al menos un jugador en cada equipo.'); return; }
       ['a', 'b'].forEach(function (t) {
-        side(m, t).forEach(function (x, i) { final[x.pid] = { t: t, gk: !!x.e.gk, g: x.e.g || 0, a: x.e.a || 0, og: x.e.og || 0, o: (t === 'a' ? 0 : 100) + i }; });
+        var L = slots(m, t), list = [];
+        L.arr.forEach(function (x, i) { if (x) list.push([x, i + 1]); });
+        L.extra.forEach(function (x) { list.push([x, null]); });
+        list.forEach(function (r, i) {
+          var x = r[0];
+          final[x.pid] = { t: t, gk: !!x.e.gk, g: x.e.g || 0, a: x.e.a || 0, og: x.e.og || 0, o: (t === 'a' ? 0 : 100) + i, n: r[1] };
+        });
       });
       ui.confirm = null;
       run(B.updateMatch(m.id, { status: 'closed', final: final }), 'Partido cerrado. Ya cuenta en la tabla.').then(function () { ui.tab = 'tabla'; render(); });
     },
+    'toggle-m': function (b) { var k = b.dataset.mid; ui.openM[k] = !ui.openM[k]; render(); },
     'cover-del': function () { run(B.setCover(null), 'Foto quitada.'); },
     'copy-text': function (b) {
       var v = b.dataset.v;
@@ -1019,6 +1054,7 @@
       var name = ui.guestName.trim().replace(/\s+/g, ' '), sh = ui.sheet, m = sh && match(sh.mid), t = ui.guestTeam;
       if (!name || !m) { toast('Escribe el nombre del invitado.'); return; }
       if (S.players.some(function (p) { return norm(p.name) === norm(name); })) { toast('Ya hay un ' + name + ' en la lista. Añade un apellido para distinguirlo.'); return; }
+      if (t !== 's' && ruleOn(m) && !S.me.isAdmin) { benchMsg(m, name); return; }
       var gn = t === 's' ? null : fieldSlot(m, t, 0, null);
       if (gn === false) { toast(TEAM[t] + ' está completo. Apúntalo de suplente.'); return; }
       ui.sheet = null;
